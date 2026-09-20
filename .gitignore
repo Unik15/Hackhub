@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+!.env*.example
+
+# Build output and local tooling
+dist/
+build/
+coverage/
+.cache/
+.vite/
+*.log
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
