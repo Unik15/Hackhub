@@ -1,38 +1,76 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{js,jsx}"],
   theme: {
+    container: {
+      center: true,
+      padding: "1.5rem",
+      screens: { "2xl": "1280px" },
+    },
     extend: {
       colors: {
-        ink: "#0A0E17",
-        panel: "#121826",
-        panel2: "#171F30",
-        line: "#232838",
-        scan: "#00D9C0",
-        signal: "#FFB84D",
-        text: "#E8ECF1",
-        muted: "#7A8699",
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary))",
+          foreground: "hsl(var(--secondary-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
+        },
+        signal: {
+          DEFAULT: "hsl(var(--signal))",
+          foreground: "hsl(var(--signal-foreground))",
+        },
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover))",
+          foreground: "hsl(var(--popover-foreground))",
+        },
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        display: ["'Space Grotesk'", "sans-serif"],
-        body: ["'Inter'", "sans-serif"],
-        mono: ["'JetBrains Mono'", "monospace"],
+        heading: ['"Big Shoulders Display"', "sans-serif"],
+        ui: ["Work Sans", "sans-serif"],
+        body: ["Work Sans", "sans-serif"],
+        button: ["Work Sans", "sans-serif"],
+        stub: ['"IBM Plex Mono"', "monospace"],
       },
       keyframes: {
-        sweep: {
-          "0%": { transform: "rotate(0deg)" },
-          "100%": { transform: "rotate(360deg)" },
-        },
-        ping: {
-          "0%": { transform: "scale(1)", opacity: 1 },
-          "75%, 100%": { transform: "scale(2.2)", opacity: 0 },
-        },
+        "accordion-down": { from: { height: 0 }, to: { height: "var(--radix-accordion-content-height)" } },
+        "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: 0 } },
+        "fade-in": { from: { opacity: 0 }, to: { opacity: 1 } },
       },
       animation: {
-        sweep: "sweep 6s linear infinite",
-        blip: "ping 2.5s cubic-bezier(0,0,0.2,1) infinite",
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-in": "fade-in 0.4s ease-out",
       },
     },
   },
-  plugins: [],
+  plugins: [require("tailwindcss-animate")],
 };

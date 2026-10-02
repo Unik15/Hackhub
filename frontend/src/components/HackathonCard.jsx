@@ -1,83 +1,65 @@
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  const diff = new Date(dateStr) - new Date();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-}
+import React from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Calendar, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatDateRange, daysUntil } from "@/utils/date";
 
-export default function HackathonCard({ hackathon, onSave, saved }) {
-  const {
-    title,
-    trendingScore,
-    url,
-    isOnline,
-    endDate
-  } = hackathon;
-
- const link =
-  typeof url === "string" && /^https?:\/\/.+/i.test(url)
-    ? url
-    : null;
-
-const mode = isOnline ? "online" : "offline"; 
-  
-  const days = daysUntil(endDate);
-  const urgent = days !== null && days >= 0 && days <= 7;
+export default function HackathonCard({ hackathon, onParticipate, index = 0 }) {
+  const { id, title, platform, startDate, endDate, location } = hackathon;
+  const daysLeft = daysUntil(startDate);
 
   return (
-    <div className="group relative bg-panel border border-line rounded-xl p-5 hover:border-scan/40 transition-colors">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-display font-semibold text-text leading-snug">{title}</h3>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{ duration: 0.45, delay: index * 0.05 }}
+      className="pass-lift flex h-full rounded border border-border bg-card"
+    >
+      {/* Main body — the part you'd read before an event */}
+      <div className="flex flex-1 flex-col gap-4 p-5">
+        <h3 className="font-heading text-xl leading-none text-foreground">{title || "Untitled hackathon"}</h3>
 
-        {typeof trendingScore === "number" && (
-          <div className="shrink-0 font-mono text-xs text-scan bg-scan/10 border border-scan/20 rounded-full px-2 py-1">
-            {trendingScore}
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-mono text-muted">
-        <span className="px-2 py-1 rounded-md bg-panel2 border border-line capitalize">
-          {mode}
-        </span>
-
-        {urgent && (
-          <span className="px-2 py-1 rounded-md bg-signal/10 border border-signal/30 text-signal flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-signal animate-blip" />
-            {days === 0 ? "closes today" : `${days}d left`}
+        <div className="flex flex-col gap-1.5 text-sm font-body text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <Calendar size={13} className="shrink-0" />
+            {formatDateRange(startDate, endDate)}
           </span>
-        )}
+          <span className="flex items-center gap-1.5">
+            <MapPin size={13} className="shrink-0" />
+            {location || "Location not specified"}
+          </span>
+        </div>
+
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          <Link to={`/hackathon/${id}`} className="flex-1">
+            <Button variant="outline" size="sm" className="w-full">
+              View Details
+            </Button>
+          </Link>
+          <Button size="sm" className="flex-1" onClick={() => onParticipate?.(hackathon)}>
+            Participate
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-5 flex items-center justify-between">
-       {link ? (
-  <a
-    href={link}
-    target="_blank"
-    rel="noopener noreferrer"
-    className="text-sm font-semibold text-scan hover:underline"
-  >
-    View hackathon →
-  </a>
-) : (
-  <span className="text-sm font-semibold text-muted">
-    Link unavailable
-  </span>
-)}
-
-        {onSave && (
-          <button
-            onClick={onSave}
-            aria-label={saved ? "Remove from saved" : "Save hackathon"}
-            className={`text-xs font-mono px-3 py-1.5 rounded-md border transition-colors ${
-              saved
-                ? "border-scan/40 text-scan bg-scan/10"
-                : "border-line text-muted hover:border-scan/40 hover:text-scan"
-            }`}
-          >
-            {saved ? "Saved" : "Save"}
-          </button>
-        )}
+      {/* The stub — torn off, the part you'd keep. Platform + countdown live here. */}
+      <div className="ticket-perforation flex w-[92px] shrink-0 flex-col items-center justify-between gap-3 py-5">
+        <span className="stub-label">{platform || "HACKHUB"}</span>
+        <div className="flex flex-col items-center gap-0.5">
+          {daysLeft ? (
+            <>
+              <span className="font-stub text-2xl font-semibold leading-none text-primary">{daysLeft}</span>
+              <span className="font-stub text-[9px] uppercase tracking-widest text-muted-foreground">
+                {daysLeft === 1 ? "day left" : "days left"}
+              </span>
+            </>
+          ) : (
+            <span className="font-stub text-[10px] uppercase tracking-widest text-muted-foreground">Live</span>
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
