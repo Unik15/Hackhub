@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { body, validationResult } from "express-validator";
 import { requireAuth } from "../middleware/auth.js";
+import { submissionLimiter } from "../middleware/rateLimit.js";
 import * as hackathonRepo from "../repositories/hackathonRepo.js";
 import { toggleSavedHackathon } from "../repositories/userRepo.js";
 import { filterByProximity, geocodeCity } from "../services/geoService.js";
@@ -55,6 +57,47 @@ router.get("/nearby", async (req, res, next) => {
     next(err);
   }
 });
+
+router.post(
+  "/",
+  submissionLimiter,
+  [
+    body("title").trim().isLength({ min: 1, max: 120 }).withMessage("Title must be between 1 and 120 characters"),
+    body("url").trim().isURL({ protocols: ["http", "https"], require_protocol: true }).withMessage("Enter a valid event URL"),
+    body("location").trim().isLength({ min: 1, max: 120 }).withMessage("Location is required"),
+    body("startDate").isISO8601().toDate().withMessage("Enter a valid start date"),
+    body("endDate").isISO8601().toDate().withMessage("Enter a valid end date"),
+    body("organizerEmail").trim().isEmail().normalizeEmail().withMessage("Enter a valid organizer email"),
+  ],
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
+
+    try {
+      const { title, url, location, startDate, endDate, organizerEmail } = req.body;
+      if (new Date(endDate) < new Date(startDate)) {
+        return res.status(400).json({ error: "End date must be on or after the start date" });
+      }
+
+      const geo = /^(online|remote|virtual)\b/i.test(location) ? null : await geocodeCity(location);
+      const item = await hackathonRepo.createSubmittedHackathon({
+        title,
+        url,
+        location,
+        startDate,
+        endDate,
+        organizerEmail,
+        latitude: geo?.lat ?? null,
+        longitude: geo?.lng ?? null,
+      });
+
+      res.status(201).json({ item, message: "Hackathon submitted for review" });
+    } catch (err) {
+      if (err.status === 409) return res.status(409).json({ error: err.message });
+      next(err);
+    }
+  }
+);
 
 router.get("/:id", async (req, res, next) => {
   try {

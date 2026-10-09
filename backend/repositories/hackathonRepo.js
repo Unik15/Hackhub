@@ -24,6 +24,7 @@ const LIST_COLUMNS = `
 `;
 
 const MAX_LIMIT = 50;
+const PUBLIC_STATUSES = ["upcoming", "active"];
 
 // =========================
 // 🔄 TRANSFORMER
@@ -107,6 +108,56 @@ export async function upsertHackathon(data) {
   }
 }
 
+/**
+ * Creates an organizer-submitted listing in a pending state. Pending entries
+ * are deliberately excluded from public discovery until reviewed.
+ */
+export async function createSubmittedHackathon({
+  title,
+  url,
+  location,
+  startDate,
+  endDate,
+  organizerEmail,
+  latitude = null,
+  longitude = null,
+}) {
+  const dedupeHash = buildDedupeHash({ title, url, platform: "manual" });
+  const isOnline = /^(online|remote|virtual)\b/i.test(location);
+
+  const { data, error } = await adminClient
+    .from("hackathons")
+    .insert({
+      title,
+      description: "",
+      url,
+      platform: "manual",
+      location,
+      latitude,
+      longitude,
+      start_date: startDate,
+      end_date: endDate,
+      is_online: isOnline,
+      status: "pending",
+      dedupe_hash: dedupeHash,
+      organizer_email: organizerEmail,
+      views_count: 0,
+      apply_count: 0,
+      trending_score: 0,
+    })
+    .select(LIST_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      throw Object.assign(new Error("This hackathon has already been submitted."), { status: 409 });
+    }
+    throw error;
+  }
+
+  return toHackathon(data);
+}
+
 // =========================
 // 🔍 SEARCH + FILTER + PAGINATION
 // =========================
@@ -127,6 +178,7 @@ export async function findMany({
     let query = adminClient
       .from("hackathons")
       .select(LIST_COLUMNS, { count: "exact" })
+      .in("status", PUBLIC_STATUSES)
       .order("created_at", { ascending: false });
 
     if (status) query = query.eq("status", status);

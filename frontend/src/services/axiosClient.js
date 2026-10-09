@@ -25,7 +25,7 @@ axiosClient.interceptors.response.use(
       error.friendlyMessage = "Can't reach the server. Check your connection and try again.";
     } else {
       const status = error.response.status;
-      const serverMessage = error.response.data?.message;
+      const serverMessage = error.response.data?.message || error.response.data?.error;
       error.friendlyMessage =
         serverMessage ||
         (status === 404
