@@ -8,12 +8,12 @@ import { axiosClient } from "./axiosClient";
 export async function fetchHackathons(params = {}) {
   const { data } = await axiosClient.get("/hackathons", { params });
   // Tolerate either a raw array or a { data: [...] } envelope from the API.
-  return Array.isArray(data) ? data : data?.data ?? [];
+  return Array.isArray(data) ? data :  data?.items ?? data?.data ?? [];
 }
 
 export async function fetchHackathonById(id) {
   const { data } = await axiosClient.get(`/hackathons/${id}`);
-  return data?.data ?? data;
+  return data?.item ?? data?.data ?? data;
 }
 
 /**
