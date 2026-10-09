@@ -2,7 +2,7 @@ import React from "react";
 
 export default function GoogleAuthButton() {
   const handleClick = () => {
-    const base = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+    const base = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
     // Full page redirect — the backend owns the OAuth flow end to end and
     // redirects back to the app once the session cookie is set.
     window.location.href = `${base}/auth/google`;
