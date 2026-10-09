@@ -16,6 +16,13 @@ export async function fetchHackathonById(id) {
   return data?.item ?? data?.data ?? data;
 }
 
+export async function fetchNearbyHackathons({ city, radiusKm }) {
+  const { data } = await axiosClient.get("/hackathons/nearby", {
+    params: { city, radius: radiusKm },
+  });
+  return data;
+}
+
 /**
  * POST /hackathons
  * Organizer submission — creates a new hackathon listing.

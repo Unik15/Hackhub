@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import * as hackathonRepo from "../repositories/hackathonRepo.js";
 import { toggleSavedHackathon } from "../repositories/userRepo.js";
+import { filterByProximity, geocodeCity } from "../services/geoService.js";
 
 const router = Router();
 
@@ -22,6 +23,34 @@ router.get("/trending", async (req, res, next) => {
     const { limit = 12, offset = 0 } = req.query;
     const items = await hackathonRepo.findTrending(limit, offset);
     res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/hackathons/nearby?city=Delhi&radius=500
+router.get("/nearby", async (req, res, next) => {
+  try {
+    const city = typeof req.query.city === "string" ? req.query.city.trim() : "";
+    const radius = Number(req.query.radius ?? 500);
+
+    if (!city || city.length > 200) {
+      return res.status(400).json({ error: "Enter a valid city or location" });
+    }
+    if (!Number.isFinite(radius) || radius < 10 || radius > 2000) {
+      return res.status(400).json({ error: "Radius must be between 10 and 2000 km" });
+    }
+
+    const userLocation = await geocodeCity(city);
+    if (!userLocation) {
+      return res.status(422).json({ error: "We could not find that location. Try a city and country." });
+    }
+
+    const candidates = await hackathonRepo.findLocatedActive();
+    const items = filterByProximity(candidates, userLocation, radius, { includeOnline: false })
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    res.json({ items, location: userLocation.formattedAddress || city, radiusKm: radius, total: items.length });
   } catch (err) {
     next(err);
   }

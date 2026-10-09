@@ -36,7 +36,11 @@ function normalize(raw) {
   organizer: raw.organizer || "",
   prizePool: raw.prizePool || "",
   registrationDeadline: validDeadline,
-  locationCity: raw.locationCity || "",
+  location: raw.locationCity || raw.location || "",
+  locationCity: raw.locationCity || raw.location || "",
+  isOnline: raw.isOnline ?? raw.mode === "online",
+  latitude: raw.latitude ?? null,
+  longitude: raw.longitude ?? null,
 
   domain: [],
   tags: [],

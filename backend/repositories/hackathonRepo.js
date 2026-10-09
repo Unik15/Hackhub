@@ -11,6 +11,8 @@ const LIST_COLUMNS = `
   url,
   platform,
   location,
+  latitude,
+  longitude,
   start_date,
   end_date,
   is_online,
@@ -36,6 +38,8 @@ export function toHackathon(row) {
     url: row.url,
     platform: row.platform,
     location: row.location || null,
+    latitude: row.latitude,
+    longitude: row.longitude,
     startDate: row.start_date,
     endDate: row.end_date,
     isOnline: row.is_online,
@@ -78,6 +82,8 @@ export async function upsertHackathon(data) {
       url: data.url,
       platform: data.platform,
       location: data.location || "",
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
       start_date: data.startDate,
       end_date: data.endDate,
       is_online: data.isOnline ?? true,
@@ -193,6 +199,29 @@ export async function findActive(limit = 200, offset = 0) {
   } catch (err) {
     console.error("[findActive ERROR]:", err.message);
     return [];
+  }
+}
+
+/** Returns active physical listings; distance filtering lives in geoService. */
+export async function findLocatedActive(limit = 500) {
+  try {
+    limit = Math.min(Math.max(Number(limit) || 500, 1), 500);
+
+    const { data } = await adminClient
+      .from("hackathons")
+      .select(LIST_COLUMNS)
+      .in("status", ["upcoming", "active"])
+      .eq("is_online", false)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("start_date", { ascending: true, nullsFirst: false })
+      .range(0, limit - 1)
+      .throwOnError();
+
+    return data.map(toHackathon);
+  } catch (err) {
+    console.error("[findLocatedActive ERROR]:", err.message);
+    throw new Error("Failed to fetch nearby hackathons");
   }
 }
 // =========================

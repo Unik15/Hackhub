@@ -82,15 +82,15 @@ export function haversineDistanceKm(a, b) {
  * by hackathonRepo) down to those within maxKm of the user, always keeping
  * at least one online event.
  */
-export function filterByProximity(hackathons, userCoords, maxKm = 500) {
+export function filterByProximity(hackathons, userCoords, maxKm = 500, { includeOnline = true } = {}) {
   if (!userCoords) return hackathons;
 
   const nearby = [];
   const online = [];
 
   for (const h of hackathons) {
-    if (h.mode === "online") {
-      online.push(h);
+    if (h.isOnline === true || h.mode === "online") {
+      if (includeOnline) online.push(h);
       continue;
     }
     if (h.latitude == null || h.longitude == null) continue; // no coords, skip from proximity calc
