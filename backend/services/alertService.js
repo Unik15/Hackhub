@@ -40,7 +40,9 @@ export async function sendTelegramAlert(message) {
         axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
           chat_id: chatId,
           text: message,
-          parse_mode: "HTML",
+          // Producers include both crawler text and HTML-like batch headers.
+          // Send plain text until all producers share one escaped format.
+          // This prevents Telegram parse failures from suppressing an alert.
         }),
       { retries: 2, baseDelayMs: 1000, label: "Telegram alert send" }
     );

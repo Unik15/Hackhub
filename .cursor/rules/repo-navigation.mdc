@@ -1,0 +1,14 @@
+---
+description: Navigate and modify HackHub from the repository root safely
+alwaysApply: true
+---
+
+# HackHub Repository Navigation
+
+Begin at the repository root and read `AGENTS.md` before changing files.
+
+- Use `README.md` for setup/deployment and `ARCHITECTURE.md` for design context.
+- Backend work belongs in `backend/`; frontend work belongs in `frontend/`.
+- Run Supabase migrations in `backend/sql/migrations/` in filename order after `schema.sql`.
+- Keep production secrets only in deployment environment variables; never place them in tracked files.
+- Preserve unrelated working-tree changes and test the smallest affected surface before handoff.
