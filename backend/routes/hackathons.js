@@ -1,7 +1,10 @@
 import { Router } from "express";
+import { body, validationResult } from "express-validator";
 import { requireAuth } from "../middleware/auth.js";
+import { submissionLimiter } from "../middleware/rateLimit.js";
 import * as hackathonRepo from "../repositories/hackathonRepo.js";
 import { toggleSavedHackathon } from "../repositories/userRepo.js";
+import { filterByProximity, geocodeCity } from "../services/geoService.js";
 
 const router = Router();
 
@@ -26,6 +29,87 @@ router.get("/trending", async (req, res, next) => {
     next(err);
   }
 });
+
+// GET /api/hackathons/nearby?lat=28.6139&lng=77.2090&radius=500
+// City search remains supported as a fallback for browsers where location access
+// is unavailable: /api/hackathons/nearby?city=Delhi&radius=500
+router.get("/nearby", async (req, res, next) => {
+  try {
+    const city = typeof req.query.city === "string" ? req.query.city.trim() : "";
+    const radius = Number(req.query.radius ?? 500);
+    const latitude = req.query.lat === undefined ? null : Number(req.query.lat);
+    const longitude = req.query.lng === undefined ? null : Number(req.query.lng);
+    const hasCoordinates = latitude !== null || longitude !== null;
+
+    if (hasCoordinates && (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)) {
+      return res.status(400).json({ error: "Enter valid latitude and longitude coordinates" });
+    }
+    if (!hasCoordinates && (!city || city.length > 200)) {
+      return res.status(400).json({ error: "Provide valid coordinates or a city" });
+    }
+    if (!Number.isFinite(radius) || radius < 10 || radius > 2000) {
+      return res.status(400).json({ error: "Radius must be between 10 and 2000 km" });
+    }
+
+    // Coordinates from the browser are preferred: they are more accurate than a
+    // city centroid and they do not require a Google Maps API key.
+    const userLocation = hasCoordinates
+      ? { lat: latitude, lng: longitude, formattedAddress: "Your current location" }
+      : await geocodeCity(city);
+    if (!userLocation) {
+      return res.status(422).json({ error: "We could not find that location. Try a city and country." });
+    }
+
+    const candidates = await hackathonRepo.findLocatedActive();
+    const items = filterByProximity(candidates, userLocation, radius, { includeOnline: false })
+      .sort((a, b) => a.distanceKm - b.distanceKm);
+
+    res.json({ items, location: userLocation.formattedAddress || city, radiusKm: radius, total: items.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post(
+  "/",
+  submissionLimiter,
+  [
+    body("title").trim().isLength({ min: 1, max: 120 }).withMessage("Title must be between 1 and 120 characters"),
+    body("url").trim().isURL({ protocols: ["http", "https"], require_protocol: true }).withMessage("Enter a valid event URL"),
+    body("location").trim().isLength({ min: 1, max: 120 }).withMessage("Location is required"),
+    body("startDate").isISO8601().toDate().withMessage("Enter a valid start date"),
+    body("endDate").isISO8601().toDate().withMessage("Enter a valid end date"),
+    body("organizerEmail").trim().isEmail().normalizeEmail().withMessage("Enter a valid organizer email"),
+  ],
+  async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
+
+    try {
+      const { title, url, location, startDate, endDate, organizerEmail } = req.body;
+      if (new Date(endDate) < new Date(startDate)) {
+        return res.status(400).json({ error: "End date must be on or after the start date" });
+      }
+
+      const geo = /^(online|remote|virtual)\b/i.test(location) ? null : await geocodeCity(location);
+      const item = await hackathonRepo.createSubmittedHackathon({
+        title,
+        url,
+        location,
+        startDate,
+        endDate,
+        organizerEmail,
+        latitude: geo?.lat ?? null,
+        longitude: geo?.lng ?? null,
+      });
+
+      res.status(201).json({ item, message: "Hackathon submitted for review" });
+    } catch (err) {
+      if (err.status === 409) return res.status(409).json({ error: err.message });
+      next(err);
+    }
+  }
+);
 
 router.get("/:id", async (req, res, next) => {
   try {

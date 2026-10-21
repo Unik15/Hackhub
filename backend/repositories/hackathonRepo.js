@@ -11,6 +11,12 @@ const LIST_COLUMNS = `
   url,
   platform,
   location,
+  latitude,
+  longitude,
+  mode,
+  domain,
+  tags,
+  registration_deadline,
   start_date,
   end_date,
   is_online,
@@ -22,6 +28,7 @@ const LIST_COLUMNS = `
 `;
 
 const MAX_LIMIT = 50;
+const PUBLIC_STATUSES = ["upcoming", "active"];
 
 // =========================
 // 🔄 TRANSFORMER
@@ -36,6 +43,12 @@ export function toHackathon(row) {
     url: row.url,
     platform: row.platform,
     location: row.location || null,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    mode: row.mode || (row.is_online ? "online" : "offline"),
+    domain: row.domain || [],
+    tags: row.tags || [],
+    registrationDeadline: row.registration_deadline || null,
     startDate: row.start_date,
     endDate: row.end_date,
     isOnline: row.is_online,
@@ -78,6 +91,12 @@ export async function upsertHackathon(data) {
       url: data.url,
       platform: data.platform,
       location: data.location || "",
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
+      mode: data.mode || (data.isOnline ? "online" : "offline"),
+      domain: data.domain || [],
+      tags: data.tags || [],
+      registration_deadline: data.registrationDeadline ?? null,
       start_date: data.startDate,
       end_date: data.endDate,
       is_online: data.isOnline ?? true,
@@ -101,6 +120,57 @@ export async function upsertHackathon(data) {
   }
 }
 
+/**
+ * Creates an organizer-submitted listing in a pending state. Pending entries
+ * are deliberately excluded from public discovery until reviewed.
+ */
+export async function createSubmittedHackathon({
+  title,
+  url,
+  location,
+  startDate,
+  endDate,
+  organizerEmail,
+  latitude = null,
+  longitude = null,
+}) {
+  const dedupeHash = buildDedupeHash({ title, url, platform: "manual" });
+  const isOnline = /^(online|remote|virtual)\b/i.test(location);
+
+  const { data, error } = await adminClient
+    .from("hackathons")
+    .insert({
+      title,
+      description: "",
+      url,
+      platform: "manual",
+      location,
+      latitude,
+      longitude,
+      mode: isOnline ? "online" : "offline",
+      start_date: startDate,
+      end_date: endDate,
+      is_online: isOnline,
+      status: "pending",
+      dedupe_hash: dedupeHash,
+      organizer_email: organizerEmail,
+      views_count: 0,
+      apply_count: 0,
+      trending_score: 0,
+    })
+    .select(LIST_COLUMNS)
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      throw Object.assign(new Error("This hackathon has already been submitted."), { status: 409 });
+    }
+    throw error;
+  }
+
+  return toHackathon(data);
+}
+
 // =========================
 // 🔍 SEARCH + FILTER + PAGINATION
 // =========================
@@ -121,6 +191,7 @@ export async function findMany({
     let query = adminClient
       .from("hackathons")
       .select(LIST_COLUMNS, { count: "exact" })
+      .in("status", PUBLIC_STATUSES)
       .order("created_at", { ascending: false });
 
     if (status) query = query.eq("status", status);
@@ -193,6 +264,29 @@ export async function findActive(limit = 200, offset = 0) {
   } catch (err) {
     console.error("[findActive ERROR]:", err.message);
     return [];
+  }
+}
+
+/** Returns active physical listings; distance filtering lives in geoService. */
+export async function findLocatedActive(limit = 500) {
+  try {
+    limit = Math.min(Math.max(Number(limit) || 500, 1), 500);
+
+    const { data } = await adminClient
+      .from("hackathons")
+      .select(LIST_COLUMNS)
+      .in("status", ["upcoming", "active"])
+      .eq("is_online", false)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("start_date", { ascending: true, nullsFirst: false })
+      .range(0, limit - 1)
+      .throwOnError();
+
+    return data.map(toHackathon);
+  } catch (err) {
+    console.error("[findLocatedActive ERROR]:", err.message);
+    throw new Error("Failed to fetch nearby hackathons");
   }
 }
 // =========================

@@ -1,13 +1,21 @@
 import { Router } from "express";
 import { body, validationResult } from "express-validator";
-import { signToken } from "../middleware/auth.js";
+import { requireAuth, SESSION_COOKIE_NAME, sessionCookieOptions, signToken } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimit.js";
-import { createUser, findByEmailWithPassword, comparePassword } from "../repositories/userRepo.js";
+import { createUser, findByEmailWithPassword, comparePassword, findById } from "../repositories/userRepo.js";
 
 const router = Router();
 
+function sendSession(res, user, status = 200) {
+  const token = signToken(user.id);
+  res
+    .status(status)
+    .cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions())
+    .json({ user: { id: user.id, name: user.name, email: user.email } });
+}
+
 router.post(
-  "/register",
+  ["/register", "/signup"],
   authLimiter,
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
@@ -21,8 +29,7 @@ router.post(
     try {
       const { name, email, password } = req.body;
       const user = await createUser({ name, email, password });
-      const token = signToken(user.id);
-      res.status(201).json({ token, user: { id: user.id, name: user.name, email: user.email } });
+      sendSession(res, user, 201);
     } catch (err) {
       if (err.status === 409) return res.status(409).json({ error: err.message });
       next(err);
@@ -33,7 +40,7 @@ router.post(
 router.post(
   "/login",
   authLimiter,
-  [body("email").isEmail(), body("password").notEmpty()],
+  [body("email").isEmail().normalizeEmail(), body("password").isLength({ min: 8 })],
   async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -46,12 +53,26 @@ router.post(
       const match = await comparePassword(row, password);
       if (!match) return res.status(401).json({ error: "Invalid credentials" });
 
-      const token = signToken(row.id);
-      res.json({ token, user: { id: row.id, name: row.name, email: row.email } });
+      sendSession(res, row);
     } catch (err) {
       next(err);
     }
   }
 );
+
+router.get("/me", requireAuth, async (req, res, next) => {
+  try {
+    const user = await findById(req.userId);
+    if (!user) return res.status(401).json({ error: "Session is no longer valid" });
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/logout", (req, res) => {
+  const { maxAge, ...clearOptions } = sessionCookieOptions();
+  res.clearCookie(SESSION_COOKIE_NAME, clearOptions).status(204).send();
+});
 
 export default router;
