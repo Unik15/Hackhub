@@ -4,8 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import AuthLayout from "@/components/auth/AuthLayout";
-import GoogleAuthButton from "@/components/auth/GoogleAuthButton";
-import { Field, authInputClass, AuthSubmitButton, Divider } from "@/components/auth/AuthFormControls";
+import { Field, authInputClass, AuthSubmitButton } from "@/components/auth/AuthFormControls";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
@@ -13,7 +12,7 @@ import Seo from "@/components/Seo";
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, "Email is required.").email("Enter a valid email address."),
-  password: z.string().min(6, "Password must be at least 6 characters."),
+  password: z.string().min(8, "Password must be at least 8 characters."),
 });
 
 export default function Login() {
@@ -66,9 +65,6 @@ export default function Login() {
       }
     >
       <Seo title="Log in" noindex />
-
-      <GoogleAuthButton />
-      <Divider />
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <Field label="Email" error={errors.email?.message}>

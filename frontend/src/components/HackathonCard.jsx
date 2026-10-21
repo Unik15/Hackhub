@@ -1,12 +1,12 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Calendar, MapPin } from "lucide-react";
+import { Calendar, MapPin, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDateRange, daysUntil } from "@/utils/date";
 
 export default function HackathonCard({ hackathon, onParticipate, index = 0 }) {
-  const { id, title, platform, startDate, endDate, location } = hackathon;
+  const { id, title, platform, startDate, endDate, location, distanceKm } = hackathon;
   const daysLeft = daysUntil(startDate);
 
   return (
@@ -30,6 +30,12 @@ export default function HackathonCard({ hackathon, onParticipate, index = 0 }) {
             <MapPin size={13} className="shrink-0" />
             {location || "Location not specified"}
           </span>
+          {Number.isFinite(distanceKm) && (
+            <span className="flex items-center gap-1.5 text-primary">
+              <Navigation size={13} className="shrink-0" />
+              {distanceKm.toLocaleString()} km away
+            </span>
+          )}
         </div>
 
         <div className="mt-auto flex items-center gap-2 pt-1">

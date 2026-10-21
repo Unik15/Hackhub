@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import { SearchX, Search, ChevronDown, AlertTriangle, RotateCcw, MapPin } from "lucide-react";
+import { SearchX, Search, ChevronDown, AlertTriangle, RotateCcw, MapPin, Navigation } from "lucide-react";
 import HackathonCard from "@/components/HackathonCard";
 import HackathonCardSkeleton from "@/components/HackathonCardSkeleton";
 import Seo from "@/components/Seo";
@@ -20,6 +20,7 @@ export default function HackathonList() {
   const [city, setCity] = useState("");
   const [radiusKm, setRadiusKm] = useState("500");
   const [nearbyLocation, setNearbyLocation] = useState("");
+  const [locating, setLocating] = useState(false);
 
   // Modal only mounts (and its chunk only loads) after the first Participate click.
   const [participateHackathon, setParticipateHackathon] = useState(null);
@@ -59,6 +60,46 @@ export default function HackathonList() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadFromCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Your browser does not support location access. Enter your city instead.");
+      return;
+    }
+
+    setLocating(true);
+    setLoading(true);
+    setError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const result = await fetchNearbyHackathons({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            radiusKm: Number(radiusKm),
+          });
+          setHackathons(result.items || []);
+          setNearbyLocation(result.location || "your current location");
+          setPlatform("all");
+        } catch (err) {
+          setError(getErrorMessage(err, "Couldn't find hackathons near your current location."));
+        } finally {
+          setLocating(false);
+          setLoading(false);
+        }
+      },
+      (geoError) => {
+        const message = geoError.code === geoError.PERMISSION_DENIED
+          ? "Location permission was denied. Enter your city instead."
+          : "We couldn't get your location. Enter your city instead.";
+        setError(message);
+        setLocating(false);
+        setLoading(false);
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+    );
   };
 
   useEffect(() => {
@@ -166,10 +207,19 @@ export default function HackathonList() {
         </select>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || locating}
           className="rounded-md bg-primary px-4 py-2.5 text-sm font-ui font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           Find near me
+        </button>
+        <button
+          type="button"
+          onClick={loadFromCurrentLocation}
+          disabled={loading || locating}
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 px-4 py-2.5 text-sm font-ui font-semibold text-primary hover:bg-primary/10 disabled:opacity-50"
+        >
+          <Navigation size={15} aria-hidden="true" />
+          {locating ? "Getting location…" : "Use my location"}
         </button>
         {nearbyLocation && (
           <button

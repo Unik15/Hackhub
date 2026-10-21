@@ -16,9 +16,17 @@ export async function fetchHackathonById(id) {
   return data?.item ?? data?.data ?? data;
 }
 
-export async function fetchNearbyHackathons({ city, radiusKm }) {
+export async function fetchNearbyHackathons({ city, latitude, longitude, radiusKm }) {
+  const params = { radius: radiusKm };
+  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+    params.lat = latitude;
+    params.lng = longitude;
+  } else {
+    params.city = city;
+  }
+
   const { data } = await axiosClient.get("/hackathons/nearby", {
-    params: { city, radius: radiusKm },
+    params,
   });
   return data;
 }

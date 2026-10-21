@@ -24,6 +24,8 @@ const log = makeLogger("crawler:orchestrator");
 function normalize(raw) {
   const parsedDeadline = raw.deadlineText ? new Date(raw.deadlineText) : null;
   const validDeadline = parsedDeadline && !isNaN(parsedDeadline) ? parsedDeadline.toISOString() : null;
+  const location = raw.locationCity || raw.location || "";
+  const mode = raw.mode || (raw.isOnline === false || location ? "offline" : "online");
 
  return {
   title: raw.title,
@@ -32,13 +34,15 @@ function normalize(raw) {
   source: raw.source,
   platform: raw.platform || raw.source || "unknown",  // 🔥 FIX HERE
 
-  mode: raw.mode || "online",
+  mode,
   organizer: raw.organizer || "",
   prizePool: raw.prizePool || "",
   registrationDeadline: validDeadline,
-  location: raw.locationCity || raw.location || "",
-  locationCity: raw.locationCity || raw.location || "",
-  isOnline: raw.isOnline ?? raw.mode === "online",
+  startDate: raw.startDate || raw.start || null,
+  endDate: raw.endDate || raw.end || raw.deadlineText || null,
+  location,
+  locationCity: location,
+  isOnline: raw.isOnline ?? mode === "online",
   latitude: raw.latitude ?? null,
   longitude: raw.longitude ?? null,
 
@@ -114,7 +118,7 @@ export async function runCrawlers() {
     for (const item of deduped) {
       try {
         // Optionally geocode a plain-text location to coordinates for offline events
-        if (item.locationCity) {
+        if (!item.isOnline && item.locationCity) {
           const geo = await geocodeCity(item.locationCity);
           if (geo) {
             item.latitude = geo.lat;

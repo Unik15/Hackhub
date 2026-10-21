@@ -30,20 +30,32 @@ router.get("/trending", async (req, res, next) => {
   }
 });
 
-// GET /api/hackathons/nearby?city=Delhi&radius=500
+// GET /api/hackathons/nearby?lat=28.6139&lng=77.2090&radius=500
+// City search remains supported as a fallback for browsers where location access
+// is unavailable: /api/hackathons/nearby?city=Delhi&radius=500
 router.get("/nearby", async (req, res, next) => {
   try {
     const city = typeof req.query.city === "string" ? req.query.city.trim() : "";
     const radius = Number(req.query.radius ?? 500);
+    const latitude = req.query.lat === undefined ? null : Number(req.query.lat);
+    const longitude = req.query.lng === undefined ? null : Number(req.query.lng);
+    const hasCoordinates = latitude !== null || longitude !== null;
 
-    if (!city || city.length > 200) {
-      return res.status(400).json({ error: "Enter a valid city or location" });
+    if (hasCoordinates && (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)) {
+      return res.status(400).json({ error: "Enter valid latitude and longitude coordinates" });
+    }
+    if (!hasCoordinates && (!city || city.length > 200)) {
+      return res.status(400).json({ error: "Provide valid coordinates or a city" });
     }
     if (!Number.isFinite(radius) || radius < 10 || radius > 2000) {
       return res.status(400).json({ error: "Radius must be between 10 and 2000 km" });
     }
 
-    const userLocation = await geocodeCity(city);
+    // Coordinates from the browser are preferred: they are more accurate than a
+    // city centroid and they do not require a Google Maps API key.
+    const userLocation = hasCoordinates
+      ? { lat: latitude, lng: longitude, formattedAddress: "Your current location" }
+      : await geocodeCity(city);
     if (!userLocation) {
       return res.status(422).json({ error: "We could not find that location. Try a city and country." });
     }

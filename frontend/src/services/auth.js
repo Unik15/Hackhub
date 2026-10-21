@@ -33,7 +33,3 @@ export async function logoutRequest() {
  * redirect back to the app), so the frontend just needs to send the browser
  * to the right URL.
  */
-export function getGoogleAuthUrl() {
-  const base = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
-  return `${base}/auth/google`;
-}

@@ -4,8 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import AuthLayout from "@/components/auth/AuthLayout";
-import GoogleAuthButton from "@/components/auth/GoogleAuthButton";
-import { Field, authInputClass, AuthSubmitButton, Divider } from "@/components/auth/AuthFormControls";
+import { Field, authInputClass, AuthSubmitButton } from "@/components/auth/AuthFormControls";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
@@ -15,7 +14,7 @@ const signupSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required.").max(120, "That name is too long."),
     email: z.string().trim().min(1, "Email is required.").email("Enter a valid email address."),
-    password: z.string().min(6, "Password must be at least 6 characters."),
+    password: z.string().min(8, "Password must be at least 8 characters."),
     confirmPassword: z.string().min(1, "Please confirm your password."),
     college: z.string().trim().min(1, "College / organization is required.").max(150, "That's too long."),
   })
@@ -70,9 +69,6 @@ export default function Signup() {
       }
     >
       <Seo title="Sign up" noindex />
-
-      <GoogleAuthButton />
-      <Divider />
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <Field label="Full name" error={errors.name?.message}>
