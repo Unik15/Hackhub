@@ -7,7 +7,7 @@ import { adminClient } from "../config/supabase.js";
 // listUsersForDigest() were all pulling the bcrypt hash into the app
 // process on every call despite toUser() never reading it.
 const SAFE_USER_COLUMNS =
-  "id, name, email, phone, skills, experience, interests, city, latitude, longitude, " +
+  "id, name, email, phone, college, skills, experience, interests, city, latitude, longitude, " +
   "preferred_mode, notify_email, notify_whatsapp, notify_daily_digest, created_at";
 
 /** Map a Postgres row (snake_case) to the camelCase shape the rest of the app expects. */
@@ -18,6 +18,7 @@ function toUser(row) {
     name: row.name,
     email: row.email,
     phone: row.phone,
+    college: row.college || null,
     profile: {
       skills: row.skills || [],
       experience: row.experience,
@@ -37,12 +38,12 @@ function toUser(row) {
   };
 }
 
-export async function createUser({ name, email, password }) {
+export async function createUser({ name, email, password, college }) {
   const hashed = await bcrypt.hash(password, 10);
 
   const { data, error } = await adminClient
     .from("users")
-    .insert({ name, email: email.toLowerCase(), password: hashed })
+    .insert({ name, email: email.toLowerCase(), password: hashed, college: college?.trim() || null })
     .select(SAFE_USER_COLUMNS)
     .single();
 

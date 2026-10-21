@@ -12,6 +12,7 @@ create table if not exists users (
   email                 text not null unique,
   password              text not null, -- bcrypt hash, never store plain text
   phone                 text,
+  college               text,
 
   skills                text[] not null default '{}',
   experience            text not null default 'beginner'

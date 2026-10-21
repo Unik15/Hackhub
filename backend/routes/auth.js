@@ -11,7 +11,7 @@ function sendSession(res, user, status = 200) {
   res
     .status(status)
     .cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions())
-    .json({ user: { id: user.id, name: user.name, email: user.email } });
+    .json({ user: { id: user.id, name: user.name, email: user.email, college: user.college || null } });
 }
 
 router.post(
@@ -21,14 +21,15 @@ router.post(
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email required").normalizeEmail(),
     body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+    body("college").optional().trim().isLength({ max: 150 }).withMessage("College must be 150 characters or fewer"),
   ],
   async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     try {
-      const { name, email, password } = req.body;
-      const user = await createUser({ name, email, password });
+      const { name, email, password, college } = req.body;
+      const user = await createUser({ name, email, password, college });
       sendSession(res, user, 201);
     } catch (err) {
       if (err.status === 409) return res.status(409).json({ error: err.message });

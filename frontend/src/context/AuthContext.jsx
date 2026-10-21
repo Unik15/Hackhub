@@ -40,11 +40,8 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
-    try {
-      await logoutRequest();
-    } finally {
-      setUser(null);
-    }
+    await logoutRequest();
+    setUser(null);
   };
 
   return (

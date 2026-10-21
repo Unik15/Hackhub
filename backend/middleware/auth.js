@@ -20,7 +20,8 @@ export function sessionCookieOptions() {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    // Lax supports sibling custom-domain subdomains; None supports cross-site hosts.
+    sameSite: process.env.SESSION_COOKIE_SAME_SITE || "lax",
     maxAge: Number(process.env.JWT_COOKIE_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000),
     path: "/",
   };

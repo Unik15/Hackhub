@@ -4,6 +4,7 @@ import { Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/utils/errors";
 
 const SubmitModal = lazy(() => import("@/modals/SubmitModal"));
 
@@ -17,6 +18,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [submitMounted, setSubmitMounted] = useState(false);
   const [submitOpen, setSubmitOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const openSubmit = () => {
     setSubmitMounted(true);
@@ -24,9 +26,17 @@ export default function Navbar() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    toast({ title: "Logged out" });
-    navigate("/");
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+      toast({ title: "Logged out" });
+      navigate("/");
+    } catch (err) {
+      toast({ variant: "destructive", title: "Couldn't log out", description: getErrorMessage(err) });
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -57,8 +67,8 @@ export default function Navbar() {
           {user ? (
             <div className="hidden items-center gap-4 sm:flex">
               <span className="text-sm font-ui font-medium text-muted-foreground">{user.name || user.email}</span>
-              <button onClick={handleLogout} className="text-xs font-ui font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground">
-                Log out
+              <button onClick={handleLogout} disabled={loggingOut} className="text-xs font-ui font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:opacity-50">
+                {loggingOut ? "Logging out…" : "Log out"}
               </button>
             </div>
           ) : (
