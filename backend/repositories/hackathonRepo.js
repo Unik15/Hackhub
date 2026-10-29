@@ -247,14 +247,6 @@ export async function findTrending(limit = 12, offset = 0) {
     throw new Error("Failed to fetch trending hackathons");
   }
 }
-/** Atomically bumps a listing's trending score (called when a user saves it). */
-export async function incrementTrendingScore(id) {
-  const { error } = await adminClient.rpc("increment_trending_score", {
-    hackathon_id: id,
-  });
-  if (error) throw error;
-}
-
 // =========================
 // ⚡ ACTIVE HACKATHONS (FOR SCHEDULER / AI)
 // =========================
