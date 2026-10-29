@@ -27,10 +27,14 @@ export function sessionCookieOptions() {
   };
 }
 
-export function requireAuth(req, res, next) {
+function readToken(req) {
   const header = req.headers.authorization || "";
   const bearerToken = header.startsWith("Bearer ") ? header.slice(7) : null;
-  const token = bearerToken || readCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+  return bearerToken || readCookie(req.headers.cookie, SESSION_COOKIE_NAME);
+}
+
+export function requireAuth(req, res, next) {
+  const token = readToken(req);
 
   if (!token) {
     return res.status(401).json({ error: "Authentication is required" });
@@ -43,6 +47,25 @@ export function requireAuth(req, res, next) {
   } catch (err) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
+}
+
+/**
+ * Resolves req.userId from the session JWT when one is present, but never
+ * rejects the request. Tracking endpoints also accept anonymous traffic, so a
+ * missing or expired token must not turn a page view into a 401.
+ */
+export function optionalAuth(req, res, next) {
+  const token = readToken(req);
+
+  if (token) {
+    try {
+      req.userId = jwt.verify(token, process.env.JWT_SECRET).sub;
+    } catch {
+      // Expired or tampered token: treat the request as anonymous.
+    }
+  }
+
+  next();
 }
 
 export function signToken(userId) {

@@ -1,154 +1,118 @@
 import express from "express";
-import { createUserClient } from "../config/supabase.js";
 import rateLimit from "express-rate-limit";
+import { adminClient } from "../config/supabase.js";
+import { optionalAuth } from "../middleware/auth.js";
+import { isDuplicate } from "../utils/dedupe.js";
 
 const router = express.Router();
 
-// 🔥 Rate limit (anti-spam)
+// 🔥 Rate limit (anti-spam) — anonymous views are counted too, so this is public
 router.use(
   rateLimit({
     windowMs: 60 * 1000,
-    max: 100
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, error: "Too many actions, please slow down." },
   })
 );
 
-const ALLOWED = ["view", "apply", "click"];
+const ALLOWED_ACTIONS = ["view", "apply", "click"];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEDUPE_WINDOW_MS = 2000;
+const MAX_METADATA_BYTES = 5000;
 
-router.post("/", async (req, res) => {
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+router.post("/", optionalAuth, async (req, res) => {
+  const { hackathon_id, action_type, metadata } = req.body || {};
+
+  if (!hackathon_id || !action_type) {
+    return res.status(400).json({
+      success: false,
+      error: "hackathon_id and action_type required",
+    });
+  }
+
+  // Without this the insert reaches Postgres as a malformed uuid (22P02) and
+  // the client gets a 500 for what is really a bad request.
+  if (!UUID_RE.test(String(hackathon_id))) {
+    return res.status(400).json({ success: false, error: "Invalid hackathon_id" });
+  }
+
+  if (!ALLOWED_ACTIONS.includes(action_type)) {
+    return res.status(400).json({ success: false, error: "Invalid action_type" });
+  }
+
+  const safeMetadata = isPlainObject(metadata) ? metadata : {};
+
+  if (JSON.stringify(safeMetadata).length > MAX_METADATA_BYTES) {
+    return res.status(400).json({ success: false, error: "Metadata too large" });
+  }
+
+  const userId = req.userId || null;
+
   try {
-    const { hackathon_id, action_type, metadata } = req.body;
+    // ============================
+    // 🚫 Duplicate protection
+    // ============================
+    // Keyed per user when signed in, otherwise per IP. See utils/dedupe.js for
+    // why this is not a Postgres time-window query.
+    const dedupeKey = `${userId || `ip:${req.ip}`}|${hackathon_id}|${action_type}`;
 
-    // ✅ Basic validation
-    if (!hackathon_id || !action_type) {
-      return res.status(400).json({
-        success: false,
-        error: "hackathon_id and action_type required"
-      });
-    }
-
-    if (!ALLOWED.includes(action_type)) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid action_type"
-      });
-    }
-
-    // ✅ Metadata safety
-    const safeMetadata =
-      metadata && typeof metadata === "object" ? metadata : {};
-
-    // 🚫 Prevent large payload
-    if (JSON.stringify(safeMetadata).length > 5000) {
-      return res.status(400).json({
-        success: false,
-        error: "Metadata too large"
-      });
-    }
-
-    // ✅ Auth handling (optional user)
-    let supabase = createUserClient("");
-    let user_id = null;
-
-    const token = req.headers.authorization?.replace("Bearer ", "");
-
-    if (token) {
-      supabase = createUserClient(token);
-
-      const { data, error } = await supabase.auth.getUser();
-
-      if (error) {
-        console.warn("Auth error:", error.message);
-      }
-
-      user_id = data?.user?.id || null;
+    if (isDuplicate(dedupeKey, DEDUPE_WINDOW_MS)) {
+      return res.json({ success: true, message: "Duplicate skipped" });
     }
 
     // ============================
-    // 🚫 Duplicate protection FIXED
+    // 🧠 INSERT
     // ============================
+    const row = {
+      user_id: userId,
+      hackathon_id,
+      action_type,
+      metadata: safeMetadata,
+    };
 
-    let query = supabase
-      .from("user_actions")
-      .select("id")
-      .eq("hackathon_id", hackathon_id)
-      .eq("action_type", action_type)
-      .gte(
-        "created_at",
-        new Date(Date.now() - 2000).toISOString()
-      )
-      .limit(1);
+    let { error: insertError } = await adminClient.from("user_actions").insert(row);
 
-    // 👇 only apply user filter if exists
-    if (user_id) {
-      query = query.eq("user_id", user_id);
+    // A token can outlive the account it points at. Record the action
+    // anonymously instead of losing the event to a foreign key violation.
+    if (insertError?.code === "23503" && userId) {
+      ({ error: insertError } = await adminClient
+        .from("user_actions")
+        .insert({ ...row, user_id: null }));
     }
-
-    const { data: recent } = await query;
-
-    if (recent?.length > 0) {
-      return res.json({
-        success: true,
-        message: "Duplicate skipped"
-      });
-    }
-
-    // ============================
-    // 🧠 INSERT (SAFE FIRST)
-    // ============================
-
-    const { error: insertError } = await supabase
-      .from("user_actions")
-      .insert({
-        user_id,
-        hackathon_id,
-        action_type,
-        metadata: safeMetadata
-      });
 
     if (insertError) {
-      console.error("Insert error:", insertError);
+      // Remaining 23503s mean the hackathon row is gone, not a server fault.
+      const status = insertError.code === "23503" ? 404 : 500;
+      console.error("[actions] insert failed:", insertError);
 
-      return res.status(500).json({
+      return res.status(status).json({
         success: false,
-        error: "Insert failed"
+        error: status === 404 ? "Hackathon not found" : "Insert failed",
       });
     }
 
     // ============================
     // ⚡ COUNTER UPDATE (AFTER INSERT)
     // ============================
+    // The action is already stored; a counter failure must not fail the request.
+    if (action_type === "view" || action_type === "apply") {
+      const rpc = action_type === "view" ? "increment_views" : "increment_apply";
+      const { error: rpcError } = await adminClient.rpc(rpc, { hid: hackathon_id });
 
-    if (action_type === "view") {
-      const { error } = await supabase.rpc("increment_views", {
-        hid: hackathon_id
-      });
-
-      if (error) console.error("RPC view error:", error);
+      if (rpcError) console.error(`[actions] ${rpc} failed:`, rpcError.message);
     }
 
-    if (action_type === "apply") {
-      const { error } = await supabase.rpc("increment_apply", {
-        hid: hackathon_id
-      });
-
-      if (error) console.error("RPC apply error:", error);
-    }
-
-    // ============================
-    // ✅ SUCCESS
-    // ============================
-
-    return res.json({
-      success: true
-    });
-
+    return res.json({ success: true });
   } catch (err) {
-    console.error("ACTION ERROR:", err);
+    console.error("[actions] unexpected error:", err);
 
-    return res.status(500).json({
-      success: false,
-      error: "Server error"
-    });
+    return res.status(500).json({ success: false, error: "Server error" });
   }
 });
 
