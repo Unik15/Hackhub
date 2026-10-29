@@ -82,5 +82,8 @@ export function filterByProximity(hackathons, userCoords, maxKm = 500, { include
     const distanceKm = haversineDistanceKm(userCoords, { lat: h.latitude, lng: h.longitude });
     if (distanceKm <= maxKm) nearby.push({ ...h, distanceKm: Math.round(distanceKm) });
   }
-  return [...nearby, ...(includeOnline ? online.slice(0, 1) : [])];
+  // Cap the online set so a listing-heavy crawl can't blow up the LLM prompt;
+  // the old slice(0, 1) silently dropped every online result after the first.
+  const onlineCap = Math.max(1, Number(process.env.MAX_ONLINE_RESULTS || 50));
+  return [...nearby, ...(includeOnline ? online.slice(0, onlineCap) : [])];
 }
