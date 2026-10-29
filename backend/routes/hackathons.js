@@ -125,7 +125,13 @@ router.get("/:id", async (req, res, next) => {
 router.post("/:id/save", requireAuth, async (req, res, next) => {
   try {
     const { saved } = await toggleSavedHackathon(req.userId, req.params.id);
-    if (saved) await hackathonRepo.incrementTrendingScore(req.params.id);
+    if (saved) {
+      // Trending score is a ranking nicety — a failure here must never turn a
+      // successful save into a 500 for the user.
+      await hackathonRepo.incrementTrendingScore(req.params.id).catch((err) => {
+        console.error("[save] trending score update failed:", err.message);
+      });
+    }
     res.json({ saved });
   } catch (err) {
     next(err);

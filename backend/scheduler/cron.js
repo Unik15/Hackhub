@@ -68,7 +68,7 @@ async function sendDigestsToAllUsers() {
         const ranked = await rankHackathonsForUser(user, nearby);
         const withLinks = ranked.map((r) => ({
           ...r,
-          link: nearby.find((h) => h.id === r.id)?.link,
+          link: nearby.find((h) => h.id === r.id)?.url,
         }));
 
         await sendDailyDigest(user, withLinks);

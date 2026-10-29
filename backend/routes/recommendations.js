@@ -40,7 +40,7 @@ router.get("/", requireAuth, aiLimiter, async (req, res, next) => {
       const full = byId.get(r.id);
       return {
         ...r,
-        link: full?.link,
+        link: full?.url,
         mode: full?.mode,
         distanceKm: full?.distanceKm,
         registrationDeadline: full?.registrationDeadline,
