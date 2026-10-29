@@ -242,22 +242,26 @@ $$;
 revoke all on function public.increment_views(uuid) from public;
 revoke all on function public.increment_apply(uuid) from public;
 
-grant execute on function public.increment_views(uuid) to anon, authenticated, service_role;
-grant execute on function public.increment_apply(uuid) to anon, authenticated, service_role;
+grant execute on function public.increment_views(uuid) to service_role;
+grant execute on function public.increment_apply(uuid) to service_role;
 
 -- ============================================================
 -- Row Level Security
 -- ============================================================
 -- The backend talks to Supabase with the service-role key, which bypasses RLS
--- by design. RLS is enabled as defense-in-depth in case the anon key is ever
--- used directly against these tables.
+-- by design. RLS is enabled as defense-in-depth so a leaked anon key cannot
+-- read or write these tables directly.
 alter table public.users enable row level security;
 alter table public.hackathons enable row level security;
 alter table public.saved_hackathons enable row level security;
+alter table public.user_actions enable row level security;
+alter table public.analytics_events enable row level security;
 
 drop policy if exists "Public read live hackathons" on public.hackathons;
 create policy "Public read live hackathons" on public.hackathons
-  for select using (status in ('upcoming', 'active'));
+  for select
+  to anon, authenticated
+  using (status in ('upcoming', 'active'));
 
--- user_actions and analytics_events intentionally stay without RLS until
--- routes/actions.js and routes/analytics.js move to the admin client.
+-- users, saved_hackathons, user_actions and analytics_events intentionally have
+-- no policies: only the service role may touch them.
