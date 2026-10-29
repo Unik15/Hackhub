@@ -1,7 +1,6 @@
 @tailwind base;
 @tailwind components;
-@tailwind utilities;
-
+ @tailwind utilities; 
 @layer base {
   /* HackHub theme — "Event Pass": every hackathon is a ticket you hold.
      Warm paper canvas, ink text, marigold as the one confident action color,

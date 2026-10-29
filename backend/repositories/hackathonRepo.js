@@ -103,10 +103,9 @@ export async function upsertHackathon(data) {
       status: data.status || "upcoming",
       dedupe_hash,
 
-      // ✅ safe defaults
-      views_count: 0,
-      apply_count: 0,
-      trending_score: 0,
+      // views_count/apply_count/trending_score are omitted on purpose: the
+      // columns default to 0 on insert, and including them here would reset
+      // engagement counters every time the crawler re-upserts a listing.
     };
 
     const { error } = await adminClient
@@ -178,6 +177,8 @@ export async function findMany({
   search,
   platform,
   status,
+  domain,
+  mode,
   page = 1,
   limit = 20,
 } = {}) {
@@ -196,6 +197,8 @@ export async function findMany({
 
     if (status) query = query.eq("status", status);
     if (platform) query = query.eq("platform", platform);
+    if (mode) query = query.eq("mode", mode);
+    if (domain) query = query.contains("domain", Array.isArray(domain) ? domain : [domain]);
 
     if (search) {
      query = query.or(
