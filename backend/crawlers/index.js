@@ -21,7 +21,7 @@ const log = makeLogger("crawler:orchestrator");
  * Loose date parsing is used since every source formats dates differently;
  * anything unparseable is left null rather than guessed.
  */
-function normalize(raw) {
+export function normalize(raw) {
   const parsedDeadline = raw.deadlineText ? new Date(raw.deadlineText) : null;
   const validDeadline = parsedDeadline && !isNaN(parsedDeadline) ? parsedDeadline.toISOString() : null;
   const location = raw.locationCity || raw.location || "";
@@ -58,13 +58,22 @@ function normalize(raw) {
  * out here means fewer geocoding calls and fewer DB upserts per run — the
  * dedupe_hash unique constraint in Postgres remains the source of truth for
  * cross-run dedup, this is just an optimization within a single crawl.
+ *
+ * The arguments must match buildDedupeHash()'s contract exactly. Passing
+ * `source`/`link` (the crawler-side names) left url and platform undefined, so
+ * every listing hashed to "title|undefined|undefined" and any two hackathons
+ * sharing a title — across different platforms and URLs — collapsed into one.
  */
-function dedupeWithinRun(items) {
+export function dedupeWithinRun(items) {
   const seen = new Set();
   const unique = [];
 
   for (const item of items) {
-    const hash = buildDedupeHash({ title: item.title, source: item.source, link: item.link });
+    const hash = buildDedupeHash({
+      title: item.title,
+      url: item.url,
+      platform: item.platform,
+    });
     if (seen.has(hash)) continue;
     seen.add(hash);
     unique.push(item);
