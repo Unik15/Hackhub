@@ -499,6 +499,10 @@ export async function crawlUnstop() {
   // ============================================================
   // 1. API FALLBACK
   // ============================================================
+  // Held in case the scrape comes back thinner than a small API result — see
+  // the comparison before the final return.
+  let apiFallbackResults = [];
+
   if (decision.useApi) {
     try {
       const apiResults = await fetchFromApiWithFallback(
@@ -515,7 +519,7 @@ export async function crawlUnstop() {
         validated.length
       );
 
-      if (validated.length > 0) {
+      if (validated.length >= EXPECTED_MIN_RESULTS) {
         log.info(
           `API integration succeeded for ${SOURCE}`,
           { count: validated.length }
@@ -528,6 +532,17 @@ export async function crawlUnstop() {
         );
 
         return validated.slice(0, MAX_RESULTS);
+      }
+
+      if (validated.length > 0) {
+        // A non-zero count is not the same as a healthy result set. Scraping
+        // as well and keeping whichever finds more beats publishing a
+        // fraction of the listings because the API half-failed.
+        log.warn(
+          `API returned only ${validated.length} usable listing(s) for ${SOURCE} (minimum ${EXPECTED_MIN_RESULTS}) — scraping as well`
+        );
+
+        apiFallbackResults = validated;
       }
     } catch (err) {
       log.warn("Unstop API fallback failed", {
@@ -549,6 +564,11 @@ export async function crawlUnstop() {
     });
 
     recordOutcome(SOURCE, "html", false, 0);
+
+    if (apiFallbackResults.length > 0) {
+      log.warn(`Using the ${apiFallbackResults.length} API listing(s) instead`);
+      return apiFallbackResults.slice(0, MAX_RESULTS);
+    }
 
     return [];
   }
@@ -665,6 +685,15 @@ export async function crawlUnstop() {
   // ============================================================
   // 6. FINAL RESULT
   // ============================================================
+  if (apiFallbackResults.length > results.length) {
+    log.warn(
+      `Keeping the ${apiFallbackResults.length} API listing(s) instead of ${results.length} scraped one(s)`
+    );
+
+    results = apiFallbackResults;
+    finalStrategy = "api";
+  }
+
   log.info(
     `Crawl complete: ${results.length} valid listings`,
     {

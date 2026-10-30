@@ -147,18 +147,31 @@ export async function crawlDevpost() {
   // trying right now, given what's actually happened recently."
   const decision = decideStrategy(SOURCE, { apiConfigured: DEVPOST_API_CONFIGS.length > 0 });
 
+  // Held in case the scrape comes back thinner than a small API result — see
+  // the comparison at the end of this function.
+  let apiFallbackResults = [];
+
   if (decision.useApi) {
     const apiResults = await fetchFromApiWithFallback(DEVPOST_API_CONFIGS, { source: SOURCE });
     const validated = (apiResults || []).filter(validateRawHackathon);
 
     recordOutcome(SOURCE, "api", validated.length > 0, validated.length);
 
-    if (validated.length > 0) {
+    if (validated.length >= EXPECTED_MIN_RESULTS) {
       log.info(`API integration succeeded for ${SOURCE} — using it, skipping HTML scraping this run`, {
         count: validated.length,
       });
       reportAnomalyIfStillLow(SOURCE, validated.length, EXPECTED_MIN_RESULTS);
       return validated;
+    }
+
+    if (validated.length > 0) {
+      // "Some results" is not the same as "enough results". Returning early on
+      // any non-zero count let a half-broken API silently replace a healthy
+      // scrape — the run would look successful while publishing a fraction of
+      // the listings. Keep them and let the comparison below decide.
+      log.warn(`API returned only ${validated.length} usable listing(s) for ${SOURCE} (minimum ${EXPECTED_MIN_RESULTS}) — scraping as well`);
+      apiFallbackResults = validated;
     }
     // else: falls through to scraping below — decision engine already
     // logged why (see decideStrategy's `reason` field in the log line above)
@@ -169,7 +182,9 @@ export async function crawlDevpost() {
     html = await fetchWithRetry(DEVPOST_URL);
   } catch (err) {
     log.error("Failed to fetch listing page after retries", { message: err.message });
-    return [];
+    // The API may have returned a usable-but-small set; a dead listing page
+    // is no reason to throw that away too.
+    return apiFallbackResults;
   }
 
   let { $, results } = parseListingHtml(html);
@@ -218,6 +233,12 @@ export async function crawlDevpost() {
       }))
       .filter(validateRawHackathon);
     if (results.length > 0) finalStrategy = "ai";
+  }
+
+  if (apiFallbackResults.length > results.length) {
+    log.warn(`Keeping the ${apiFallbackResults.length} API listing(s) instead of ${results.length} scraped one(s)`);
+    results = apiFallbackResults;
+    finalStrategy = "api";
   }
 
   log.info(`Crawl complete: ${results.length} valid listings`);

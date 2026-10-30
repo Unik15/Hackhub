@@ -7,6 +7,20 @@ import { makeLogger } from "./logger.js";
 const log = makeLogger("api-crawler");
 const API_TIMEOUT_MS = Number(process.env.API_INTEGRATION_TIMEOUT_MS || 10000);
 
+/**
+ * Defaults applied only when a config opts into pagination with a `pagination`
+ * block. A config without one keeps the original single-request behaviour, so
+ * adding pagination to one source cannot change how another one is fetched.
+ */
+const PAGINATION_DEFAULTS = {
+  pageParam: "page",
+  perPageParam: "per_page",
+  perPage: null,
+  startPage: 1,
+  maxPages: 5,
+  maxResults: 200,
+};
+
 /** Resolves a dot-path like "data.results" or "items[0].name" against an object. */
 function getPath(obj, path) {
   if (!path) return undefined;
@@ -42,6 +56,42 @@ function parseApiItem(item, fields, source) {
 }
 
 /**
+ * One HTTP round-trip for a single page. Retries and the host throttle live
+ * here so every page in a paginated run gets the same treatment as a single
+ * request did before pagination existed.
+ */
+async function requestPage(config, pagination, page, source) {
+  const params = { ...(config.params || {}) };
+
+  if (pagination) {
+    params[pagination.pageParam] = page;
+    if (pagination.perPage && pagination.perPageParam) {
+      params[pagination.perPageParam] = pagination.perPage;
+    }
+  }
+
+  const response = await withTimeout(
+    retryAsync(
+      async () => {
+        await throttleHost(config.url);
+        return axios.request({
+          url: config.url,
+          method: config.method || "GET",
+          params,
+          headers: { "User-Agent": "HackHubBot/1.0", Accept: "application/json", ...config.headers },
+          timeout: API_TIMEOUT_MS,
+        });
+      },
+      { retries: 2, baseDelayMs: 1000, label: `API fetch for ${source}` }
+    ),
+    API_TIMEOUT_MS + 5000,
+    `API fetch for ${source}`
+  );
+
+  return response.data;
+}
+
+/**
  * Fetches and parses hackathon listings from a real API, given a config:
  *
  * {
@@ -53,53 +103,92 @@ function parseApiItem(item, fields, source) {
  *     dateText: "deadline",
  *     location: "location.city",
  *     mode: (item) => item.is_online ? "online" : "offline",
- *   }
+ *   },
+ *   pagination: {                // optional — omit for a single request
+ *     pageParam: "page",         // query param carrying the page number
+ *     perPageParam: "per_page",
+ *     perPage: 40,
+ *     startPage: 1,
+ *     maxPages: 5,
+ *     maxResults: 200,
+ *   },
  * }
  *
- * Returns `null` (never throws) if no config is provided, the request
+ * Returns `null` (never throws) if no config is provided, the first page
  * fails, or the response doesn't match the expected shape — callers should
  * treat `null` as "API path unavailable this run" and fall back to HTML
  * scraping, which is exactly what devpostCrawler.js / unstopCrawler.js do.
+ *
+ * A *later* page failing is different: by then we already hold usable data,
+ * so the partial result is returned rather than thrown away. Losing page 4
+ * should not cost us pages 1-3.
  */
 export async function fetchFromApi(config, { source = "unknown" } = {}) {
   if (!config?.url) return null; // no API configured for this source
 
-  try {
-    const response = await withTimeout(
-      retryAsync(
-        async () => {
-          await throttleHost(config.url);
-          return axios.request({
-            url: config.url,
-            method: config.method || "GET",
-            params: config.params,
-            headers: { "User-Agent": "HackHubBot/1.0", Accept: "application/json", ...config.headers },
-            timeout: API_TIMEOUT_MS,
-          });
-        },
-        { retries: 2, baseDelayMs: 1000, label: `API fetch for ${source}` }
-      ),
-      API_TIMEOUT_MS + 5000,
-      `API fetch for ${source}`
-    );
+  const pagination = config.pagination ? { ...PAGINATION_DEFAULTS, ...config.pagination } : null;
+  const maxPages = pagination ? pagination.maxPages : 1;
+  const maxResults = pagination ? pagination.maxResults : Infinity;
+  const startPage = pagination ? pagination.startPage : 1;
 
-    const items = config.itemsPath ? getPath(response.data, config.itemsPath) : response.data;
+  const collected = [];
+  const seenLinks = new Set();
+
+  for (let offset = 0; offset < maxPages; offset++) {
+    const page = startPage + offset;
+
+    let data;
+    try {
+      data = await requestPage(config, pagination, page, source);
+    } catch (err) {
+      log.warn(`API page ${page} for ${source} failed`, { message: err.message });
+      if (collected.length === 0) return null;
+      break;
+    }
+
+    const items = config.itemsPath ? getPath(data, config.itemsPath) : data;
     if (!Array.isArray(items)) {
       log.warn(`API response for ${source} didn't contain an array at the expected path`, {
         itemsPath: config.itemsPath,
+        page,
       });
-      return null;
+      if (collected.length === 0) return null;
+      break;
     }
 
-    const parsed = items.map((item) => parseApiItem(item, config.fields || {}, source)).filter(Boolean);
-    log.info(`API integration for ${source} parsed ${parsed.length}/${items.length} item(s)`);
-    return parsed;
-  } catch (err) {
-    log.warn(`API integration failed for ${source} — falling back to HTML scraping`, {
-      message: err.message,
-    });
+    if (items.length === 0) break; // walked past the last page
+
+    let added = 0;
+    for (const item of items) {
+      const parsed = parseApiItem(item, config.fields || {}, source);
+      if (!parsed) continue;
+
+      // Listings shift between page requests — a new hackathon published
+      // mid-crawl pushes everything down one slot, so a row can legitimately
+      // appear on two pages. The link is the only stable identity available
+      // before dedupe_hash is computed.
+      if (seenLinks.has(parsed.link)) continue;
+      seenLinks.add(parsed.link);
+      collected.push(parsed);
+      added += 1;
+
+      if (collected.length >= maxResults) break;
+    }
+
+    log.info(`API page ${page} for ${source}: ${items.length} raw, ${added} new, ${collected.length} kept`);
+
+    if (collected.length >= maxResults) break;
+    // A whole page of repeats means pagination has looped or shifted past the
+    // window we care about; there is nothing new further down.
+    if (added === 0 && offset > 0) break;
+  }
+
+  if (collected.length === 0) {
+    log.warn(`API integration for ${source} returned no usable items — treating the API as unavailable`);
     return null;
   }
+
+  return collected;
 }
 
 /**
