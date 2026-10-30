@@ -8,6 +8,8 @@ import { geocodeCity } from "../services/geoService.js";
 import { collectAlert, flushAlerts } from "../services/alertBatcher.js";
 import { retryAsync } from "../utils/retry.js";
 import { withTimeout } from "../utils/timeout.js";
+import { parseDateRange } from "../utils/parseDateRange.js";
+import { parseDateStringToISO } from "../utils/parseDate.js";
 import { closeSharedBrowser } from "../utils/browserPool.js";
 import { makeLogger } from "../utils/logger.js";
 import { crawlReskilll } from "./reskilll/reskilllCrawler.js";
@@ -21,30 +23,62 @@ const log = makeLogger("crawler:orchestrator");
  * Loose date parsing is used since every source formats dates differently;
  * anything unparseable is left null rather than guessed.
  */
+function toIso(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+
+  const text = String(value).trim();
+  if (!text) return null;
+
+  // parseDateStringToISO builds the instant from UTC parts, so it is
+  // timezone-independent. Native `new Date("15 Mar 2026")` is not: it resolves
+  // to local midnight, giving the same listing a different UTC instant (and
+  // sometimes a different calendar day) depending on where the server runs.
+  return parseDateStringToISO(text);
+}
+
 export function normalize(raw) {
-  const parsedDeadline = raw.deadlineText ? new Date(raw.deadlineText) : null;
-  const validDeadline = parsedDeadline && !isNaN(parsedDeadline) ? parsedDeadline.toISOString() : null;
   const location = raw.locationCity || raw.location || "";
   const mode = raw.mode || (raw.isOnline === false || location ? "offline" : "online");
 
- return {
-  title: raw.title,
-  url: raw.url || raw.link,   // 🔥 important
-  link: raw.link || raw.url,  // backward compatibility
-  source: raw.source,
-  platform: raw.platform || raw.source || "unknown",  // 🔥 FIX HERE
+  // Sources disagree on where they put dates, and the two fields are not
+  // interchangeable: deadlineText is a registration deadline (Unstop's
+  // .regDate/.deadline), while dateText is a display string that is usually a
+  // range. Mapping a deadline onto end_date both mislabels the data and trips
+  // the check_dates constraint whenever the deadline precedes the start.
+  const registrationDeadline = toIso(raw.registrationDeadline || raw.deadlineText);
 
-  mode,
-  organizer: raw.organizer || "",
-  prizePool: raw.prizePool || "",
-  registrationDeadline: validDeadline,
-  startDate: raw.startDate || raw.start || null,
-  endDate: raw.endDate || raw.end || raw.deadlineText || null,
-  location,
-  locationCity: location,
-  isOnline: raw.isOnline ?? mode === "online",
-  latitude: raw.latitude ?? null,
-  longitude: raw.longitude ?? null,
+  let startDate = toIso(raw.startDate || raw.start);
+  let endDate = toIso(raw.endDate || raw.end);
+
+  if (!startDate && !endDate && raw.dateText) {
+    const range = parseDateRange(raw.dateText);
+    startDate = range.start;
+    endDate = range.end;
+  }
+
+  // check_dates rejects the entire row when end_date < start_date, so drop an
+  // inverted end rather than losing the listing.
+  if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
+    endDate = null;
+  }
+
+  return {
+    title: raw.title,
+    url: raw.url || raw.link,
+    platform: raw.platform || raw.source || "unknown",
+
+    mode,
+    organizer: raw.organizer || "",
+    prizePool: raw.prizePool || "",
+    registrationDeadline,
+    startDate,
+    endDate,
+    location,
+    locationCity: location,
+    isOnline: raw.isOnline ?? mode === "online",
+    latitude: raw.latitude ?? null,
+    longitude: raw.longitude ?? null,
 
   domain: [],
   tags: [],

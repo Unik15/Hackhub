@@ -105,6 +105,33 @@ export function parseDateStringToISO(text, opts = {}) {
     }
   }
 
+  // 4b) Month-first patterns:
+  // supports: "Aug 12, 2026", "Mar 15 2026", "Jan 01 2026"
+  // Without this branch these fell through to `new Date()` at the bottom, which
+  // parses in the server's local timezone — the same listing then resolved to a
+  // different UTC instant (and sometimes a different calendar day) depending on
+  // where the backend happens to run.
+  const monthFirstRx = /^([A-Za-z]{3,9})[ ,\-]+(\d{1,2})(?:st|nd|rd|th)?,?[ ]*(\d{2,4})(?:[ ,\-]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/i;
+  const mMonthFirst = s.match(monthFirstRx);
+  if (mMonthFirst) {
+    const [, mon, day, yr, hh, mi, ss] = mMonthFirst;
+    const monIndex = MONTH_MAP[mon.toLowerCase()];
+    if (typeof monIndex === "number") {
+      let year = String(yr);
+      if (year.length === 2 && options.twoDigitYear) year = String(resolveTwoDigitYear(year));
+      const yNum = Number(year);
+      if (Number.isNaN(yNum)) return null;
+      return toISOFromComponents(
+        yNum,
+        monIndex,
+        Number(day),
+        hh ? Number(hh) : 0,
+        mi ? Number(mi) : 0,
+        ss ? Number(ss) : 0
+      );
+    }
+  }
+
   // 5) Month + Year only e.g. "Aug 2026" -> pick first day of month
   const monthYearRx = /^([A-Za-z]{3,9})[ ,\-]+(\d{4}|\d{2})$/i;
   const mMy = s.match(monthYearRx);

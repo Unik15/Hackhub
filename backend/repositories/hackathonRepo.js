@@ -75,6 +75,28 @@ export function buildDedupeHash({ title, url, platform }) {
 }
 
 // =========================
+// 🏷️ STATUS FROM DATES
+// =========================
+/**
+ * Derives a listing's status from its own dates, so a crawl never publishes an
+ * already-finished event as "upcoming" until the nightly expiry job catches up
+ * (up to 24 hours later). Mirrors expireOld()'s rule so the two cannot disagree.
+ */
+export function deriveStatus(startDate, endDate, now = Date.now()) {
+  const start = startDate ? Date.parse(startDate) : NaN;
+  const end = endDate ? Date.parse(endDate) : NaN;
+  const hasStart = Number.isFinite(start);
+  const hasEnd = Number.isFinite(end);
+
+  if (!hasStart && !hasEnd) return "upcoming";
+
+  const expired = hasEnd ? end < now : start < now;
+  if (expired) return "expired";
+
+  return hasStart && start > now ? "upcoming" : "active";
+}
+
+// =========================
 // 🔥 UPSERT (CRAWLER)
 // =========================
 export async function upsertHackathon(data) {
@@ -99,7 +121,7 @@ export async function upsertHackathon(data) {
     start_date: data.startDate,
     end_date: data.endDate,
     is_online: data.isOnline ?? true,
-    status: data.status || "upcoming",
+    status: data.status || deriveStatus(data.startDate, data.endDate),
     dedupe_hash,
 
     // views_count/apply_count/trending_score are omitted on purpose: the
