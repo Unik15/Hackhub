@@ -18,6 +18,25 @@ import path from "node:path";
 
 const log = makeLogger("crawler:orchestrator");
 
+// Human-readable provenance for source_name. The platform enum is an internal
+// key; this column is what an operator reads when a listing looks wrong.
+const SOURCE_LABELS = {
+  devpost: "Devpost",
+  unstop: "Unstop",
+  mlh: "Major League Hacking",
+  hack2skill: "Hack2Skill",
+  hackindia: "HackIndia",
+  college: "College",
+  reskilll: "Reskilll",
+  manual: "HackHub",
+  unknown: "Unknown",
+};
+
+function toStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry) => typeof entry === "string" && entry.trim() !== "");
+}
+
 /**
  * Normalize crawler-specific shapes into the hackathon row shape.
  * Loose date parsing is used since every source formats dates differently;
@@ -63,10 +82,18 @@ export function normalize(raw) {
     endDate = null;
   }
 
+  const platform = raw.platform || raw.source || "unknown";
+
   return {
     title: raw.title,
     url: raw.url || raw.link,
-    platform: raw.platform || raw.source || "unknown",
+    platform,
+
+    // Provenance. Both columns exist in the schema but were never written, so
+    // every crawled row had source_name = null and there was no way to tell
+    // which page a bad listing came from.
+    sourceName: raw.sourceName || SOURCE_LABELS[platform] || platform,
+    sourceUrl: raw.sourceUrl || null,
 
     mode,
     organizer: raw.organizer || "",
@@ -80,9 +107,11 @@ export function normalize(raw) {
     latitude: raw.latitude ?? null,
     longitude: raw.longitude ?? null,
 
-  domain: [],
-  tags: [],
-};
+    // Unstop already extracts these; normalize() used to hardcode [] and throw
+    // them away, which is why no row has ever had a category or tag.
+    domain: toStringArray(raw.domain),
+    tags: toStringArray(raw.tags),
+  };
 }
 
 /**

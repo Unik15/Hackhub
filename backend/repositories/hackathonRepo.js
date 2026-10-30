@@ -111,6 +111,8 @@ export async function upsertHackathon(data) {
     description: data.description || "",
     url: data.url,
     platform: data.platform,
+    source_name: data.sourceName ?? null,
+    source_url: data.sourceUrl ?? null,
     location: data.location || "",
     latitude: data.latitude ?? null,
     longitude: data.longitude ?? null,
