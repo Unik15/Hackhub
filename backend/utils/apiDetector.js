@@ -1,90 +1,111 @@
-import axios from "axios";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { makeLogger } from "./logger.js";
 import { collectAlert, flushAlerts } from "../services/alertBatcher.js";
+import { fetchFromApi } from "./apiCrawler.js";
+import { DEVPOST_API_CONFIGS } from "../crawlers/devpostCrawler.js";
+import { UNSTOP_API_CONFIGS } from "../crawlers/unstopCrawler.js";
 
 const log = makeLogger("api-detector");
 
 /**
- * Layer 6 (APIs > scraping): a lightweight, periodic check for whether a
- * source has exposed something that looks like a usable public API,
- * so scraping can eventually be replaced by a stable, documented endpoint
- * instead of an HTML selector.
+ * Weekly health check for the API sources the crawlers actually depend on.
  *
- * HONEST CAVEAT: these candidate URLs are guesses based on common API
- * path conventions (`/api/...`), not confirmed, documented endpoints —
- * neither Devpost nor Unstop is known to publish a public hackathon-listing
- * API as of this writing. Verify manually (check each site's developer
- * docs / robots.txt / terms of service) before wiring a real integration
- * around anything this detector finds; treat a "hit" here as "worth
- * investigating," not "safe to use immediately."
+ * This used to guess at candidate `/api/...` URLs and alert when one "looked
+ * usable" — a signal nothing ever acted on, and one that could never fire for
+ * Unstop: its array is nested at `data.data`, and its endpoint returns zero
+ * items without an `opportunity` param, so the old heuristic saw an empty
+ * response.
+ *
+ * Now that both integrations are live as Layer 0 ahead of HTML scraping, the
+ * useful question is the opposite one: is the endpoint we depend on still
+ * returning usable listings? Each probe reuses the crawler's real config —
+ * URL, params, field mapping, filter — so it fails for exactly the same
+ * reasons the crawler would, and one page is enough to answer it.
  */
-const CANDIDATE_ENDPOINTS = {
-  devpost: ["https://devpost.com/api/hackathons"],
-  unstop: ["https://unstop.com/api/public/opportunity/search"],
-};
+const MIN_PROBE_ITEMS = Number(process.env.API_PROBE_MIN_ITEMS || 5);
 
-function looksLikeUsableApiResponse(data) {
-  if (Array.isArray(data)) return data.length > 0;
-  if (data && typeof data === "object") {
-    return Object.values(data).some((v) => Array.isArray(v) && v.length > 0);
+const PROBES = [
+  { source: "devpost", label: "Devpost", configs: DEVPOST_API_CONFIGS },
+  { source: "unstop", label: "Unstop", configs: UNSTOP_API_CONFIGS },
+];
+
+async function probeSource({ source, label, configs }) {
+  if (!configs.length) {
+    // The flag is off, so there is nothing here to be unhealthy about.
+    return { source, label, enabled: false, usable: false, count: 0 };
   }
-  return false;
-}
 
-async function probeEndpoint(url) {
+  const config = configs[0];
+  const singlePage = {
+    ...config,
+    pagination: config.pagination ? { ...config.pagination, maxPages: 1 } : undefined,
+  };
+
   try {
-    const { data, headers } = await axios.get(url, {
-      timeout: 8000,
-      headers: { "User-Agent": "HackHubBot/1.0", Accept: "application/json" },
-      validateStatus: (s) => s < 500, // treat 4xx as "not found", not a throw
-    });
+    const items = await fetchFromApi(singlePage, { source });
+    const count = items?.length ?? 0;
 
-    const isJson = (headers["content-type"] || "").includes("application/json");
-    const usable = isJson && looksLikeUsableApiResponse(data);
-
-    return { url, reachable: true, isJson, looksUsable: usable };
+    return { source, label, enabled: true, usable: count >= MIN_PROBE_ITEMS, count, url: config.url };
   } catch (err) {
-    return { url, reachable: false, error: err.message };
+    // fetchFromApi returns null instead of throwing, but the weekly probe
+    // should never be the thing that breaks the cron.
+    return { source, label, enabled: true, usable: false, count: 0, url: config.url, error: err.message };
   }
 }
 
 /**
- * Probes all candidate endpoints for every source. Meant to run
- * infrequently (weekly, via a slow cron — see scheduler/cron.js) rather
- * than on every crawl, since it's purely informational: it doesn't change
- * crawler behavior automatically, it just surfaces a signal for a human to
- * act on.
+ * Probes every API source once. Meant to run infrequently (weekly, via a slow
+ * cron — see scheduler/cron.js) rather than on every crawl.
+ *
+ * Only a failure alerts: the crawler already falls back to HTML scraping, so a
+ * broken API is not an outage, but it is a silent downgrade in data quality
+ * (no real timestamps, no themes, a Puppeteer render per source) that someone
+ * should look at.
  */
 export async function checkApiAvailability() {
   const report = {};
 
-  for (const [source, endpoints] of Object.entries(CANDIDATE_ENDPOINTS)) {
-    const results = await Promise.all(endpoints.map(probeEndpoint));
-    report[source] = results;
+  for (const probe of PROBES) {
+    const result = await probeSource(probe);
+    report[result.source] = result;
 
-    const promising = results.find((r) => r.looksUsable);
-    if (promising) {
-      log.warn(`Possible official API detected for ${source}`, promising);
-      collectAlert(
-        `🟢 A candidate API endpoint for *${source}* returned usable-looking JSON: ${promising.url}\nWorth investigating as a scraping replacement (verify docs/ToS first).`,
-        {
-          dedupeKey: `api-detected-${source}`,
-          cooldownMs: Number(process.env.API_ALERT_COOLDOWN_MS || 7 * 24 * 60 * 60 * 1000), // 7 days
-        }
-      );
-    } else {
-      log.info(`No usable API detected for ${source} this check`, { checked: endpoints });
+    if (!result.enabled) {
+      log.info(`API health check skipped for ${result.label} — integration is disabled`);
+      continue;
     }
+
+    if (result.usable) {
+      log.info(`API healthy for ${result.label}`, { count: result.count });
+      continue;
+    }
+
+    log.warn(`API unhealthy for ${result.label}`, result);
+    collectAlert(
+      `🟠 The *${result.label}* API returned ${result.count} usable listing(s) (expected at least ${MIN_PROBE_ITEMS}).\n${result.url}\nThe crawler will fall back to HTML scraping, which is slower and returns less data.`,
+      {
+        dedupeKey: `api-unhealthy-${result.source}`,
+        cooldownMs: Number(process.env.API_ALERT_COOLDOWN_MS || 7 * 24 * 60 * 60 * 1000), // 7 days
+      }
+    );
   }
 
-  await flushAlerts({ title: "HackHub API-availability check" });
+  await flushAlerts({ title: "HackHub API health check" });
 
   return report;
 }
 
 // Allow running standalone: `node utils/apiDetector.js`
-if (process.argv[1] === new URL(import.meta.url).pathname) {
-  checkApiAvailability().then((report) => {
-    console.log(JSON.stringify(report, null, 2));
-  });
+const currentFile = path.resolve(fileURLToPath(import.meta.url));
+const executedFile = process.argv[1] ? path.resolve(process.argv[1]) : null;
+
+if (executedFile && currentFile === executedFile) {
+  checkApiAvailability()
+    .then((report) => {
+      console.log(JSON.stringify(report, null, 2));
+    })
+    .catch((err) => {
+      console.error("API health check failed:", err.message);
+      process.exitCode = 1;
+    });
 }
