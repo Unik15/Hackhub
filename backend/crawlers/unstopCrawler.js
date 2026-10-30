@@ -43,21 +43,42 @@ const UNSTOP_API_ENABLED =
 const UNSTOP_API_URL =
   process.env.UNSTOP_API_URL?.trim() || null;
 
-const UNSTOP_API_CONFIGS =
+/**
+ * Verified against the live endpoint (checked 2026-10-30):
+ *   GET https://unstop.com/api/public/opportunity/search?opportunity=hackathons&page=1&per_page=20
+ *   -> { data: { data: [...], total, per_page, last_page } }
+ *
+ * `opportunity` is case-sensitive: "Hackathons" returns zero items while
+ * "hackathons" returns the full 8,764-listing catalogue. Unstop ignores the
+ * usual filter params (status, region and sort all return the same total), so
+ * finished listings are filtered out by status/deriveStatus() downstream
+ * rather than by the query.
+ *
+ * Dates arrive as real ISO timestamps, which is why startDate/endDate are
+ * mapped directly instead of being routed through dateText.
+ */
+export const UNSTOP_API_CONFIGS =
   UNSTOP_API_ENABLED && UNSTOP_API_URL
     ? [
         {
           url: UNSTOP_API_URL,
 
+          params: { opportunity: "hackathons" },
+
           itemsPath: "data.data",
+
+          // The catalogue is 8,764 listings and Unstop's query params do not
+          // filter by status (status/region/sort all return the same total),
+          // so finished events have to be dropped here or they fill the page
+          // budget. Anything without a status is kept — only an explicit
+          // FINISHED is trusted.
+          filter: (item) => String(item.status || "").toUpperCase() !== "FINISHED",
 
           fields: {
             title: "title",
 
             link: (item) => {
-              const raw =
-                item.public_url ||
-                item.seo_url;
+              const raw = item.seo_url || item.public_url;
 
               if (!raw) {
                 return null;
@@ -73,32 +94,36 @@ const UNSTOP_API_CONFIGS =
               }
             },
 
-            dateText:
+            startDate: "start_date",
+            endDate: "end_date",
+
+            // A registration deadline, not the event's end. Mapping this to
+            // dateText (as this config used to) made normalize() write it to
+            // start_date, so every API-sourced listing began when
+            // registration closed.
+            registrationDeadline:
               "regnRequirements.end_regd_dt",
 
-            location: "region",
+            location: "location",
 
-            mode: (item) => {
-              const value = String(
-                item.region ?? ""
-              )
-                .trim()
-                .toLowerCase();
+            // online / offline / hybrid — same vocabulary the mode column
+            // accepts, so no translation layer is needed.
+            mode: "region",
 
-              switch (value) {
-                case "online":
-                  return "online";
+            organizer: "organisation.name",
+            prizePool: "overall_prizes",
+            tags: "tags",
 
-                case "offline":
-                  return "offline";
+            sourceName: () => "Unstop",
+            sourceUrl: () => "https://unstop.com/hackathons",
+          },
 
-                case "hybrid":
-                  return "hybrid";
-
-                default:
-                  return null;
-              }
-            },
+          pagination: {
+            pageParam: "page",
+            perPageParam: "per_page",
+            perPage: 20,
+            maxPages: 10,
+            maxResults: 200,
           },
         },
       ]

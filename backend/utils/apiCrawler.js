@@ -33,25 +33,73 @@ function getPath(obj, path) {
 }
 
 /**
+ * API responses occasionally embed presentation markup in what is nominally a
+ * plain field — Devpost's prize_amount arrives as
+ * "$<span data-currency-value>50,000</span>". Storing that verbatim would put
+ * HTML in the database and render as raw tags in the UI.
+ */
+export function stripHtml(value) {
+  if (value == null) return "";
+  return String(value)
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Maps one raw API item to our normalized hackathon shape using a
  * field-mapping config. Each field can be a dot-path string ("title",
  * "location.city") or a function `(item) => value` for anything that needs
  * real logic (e.g. deriving mode from a boolean flag).
+ *
+ * The output shape matches what the HTML scrapers produce, so both paths flow
+ * through the same normalize() → dedupeWithinRun() pipeline in
+ * crawlers/index.js. Fields the API exposes but the HTML path cannot are
+ * simply absent there, not special-cased here.
  */
 function parseApiItem(item, fields, source) {
   const resolve = (spec) => (typeof spec === "function" ? spec(item) : getPath(item, spec));
+  const asText = (spec) => {
+    const value = spec ? resolve(spec) : undefined;
+    return value == null ? "" : String(value).trim();
+  };
+  const asList = (spec) => {
+    const value = spec ? resolve(spec) : undefined;
+    return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim() !== "") : [];
+  };
 
   const title = fields.title ? resolve(fields.title) : undefined;
   const link = fields.link ? resolve(fields.link) : undefined;
   if (!title || !link) return null; // same validation bar as the scraping path — no title/link, no entry
 
+  const location = asText(fields.location);
+  const mode = fields.mode ? resolve(fields.mode) : undefined;
+
   return {
     title: String(title),
     link: String(link),
-    dateText: fields.dateText ? String(resolve(fields.dateText) ?? "") : "",
-    location: fields.location ? String(resolve(fields.location) ?? "") : "",
-    mode: fields.mode ? resolve(fields.mode) : "online",
     source,
+
+    // Sources that expose real timestamps get them passed straight through, so
+    // normalize() never has to re-parse a display string for them. dateText
+    // remains for sources that only publish a human-readable range.
+    dateText: asText(fields.dateText),
+    startDate: asText(fields.startDate) || null,
+    endDate: asText(fields.endDate) || null,
+    registrationDeadline: asText(fields.registrationDeadline) || null,
+
+    location,
+    mode: mode || (location ? "offline" : "online"),
+    // Left undefined when unmapped so normalize() derives it from mode.
+    isOnline: fields.isOnline ? resolve(fields.isOnline) : undefined,
+
+    organizer: asText(fields.organizer),
+    prizePool: asText(fields.prizePool),
+    domain: asList(fields.domain),
+    tags: asList(fields.tags),
+
+    sourceName: asText(fields.sourceName) || undefined,
+    sourceUrl: asText(fields.sourceUrl) || null,
   };
 }
 
@@ -104,6 +152,7 @@ async function requestPage(config, pagination, page, source) {
  *     location: "location.city",
  *     mode: (item) => item.is_online ? "online" : "offline",
  *   },
+ *   filter: (item) => item.status !== "FINISHED",  // optional, runs on the raw item
  *   pagination: {                // optional — omit for a single request
  *     pageParam: "page",         // query param carrying the page number
  *     perPageParam: "per_page",
@@ -159,7 +208,16 @@ export async function fetchFromApi(config, { source = "unknown" } = {}) {
     if (items.length === 0) break; // walked past the last page
 
     let added = 0;
+    let filtered = 0;
     for (const item of items) {
+      // Applied to the raw item, before field mapping, so a config can drop
+      // rows the API returns but we never want — Unstop mixes finished events
+      // into its listing and its query params cannot filter them out.
+      if (config.filter && !config.filter(item)) {
+        filtered += 1;
+        continue;
+      }
+
       const parsed = parseApiItem(item, config.fields || {}, source);
       if (!parsed) continue;
 
@@ -175,12 +233,16 @@ export async function fetchFromApi(config, { source = "unknown" } = {}) {
       if (collected.length >= maxResults) break;
     }
 
-    log.info(`API page ${page} for ${source}: ${items.length} raw, ${added} new, ${collected.length} kept`);
+    log.info(
+      `API page ${page} for ${source}: ${items.length} raw, ${filtered} filtered, ${added} new, ${collected.length} kept`
+    );
 
     if (collected.length >= maxResults) break;
     // A whole page of repeats means pagination has looped or shifted past the
-    // window we care about; there is nothing new further down.
-    if (added === 0 && offset > 0) break;
+    // window we care about; there is nothing new further down. A page that was
+    // entirely filtered out is different — those rows were dropped on purpose
+    // and the pages behind them may still hold live listings.
+    if (added === 0 && items.length > filtered && offset > 0) break;
   }
 
   if (collected.length === 0) {

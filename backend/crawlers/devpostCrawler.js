@@ -6,7 +6,7 @@ import { firstNonEmpty, pickBestContainerSelector, extractByHrefPattern } from "
 import { isCountAnomalous, reportAnomalyIfStillLow } from "../utils/anomalyDetection.js";
 import { renderWithPuppeteer } from "../utils/puppeteerFetch.js";
 import { aiExtractHackathons } from "../services/aiFallbackParser.js";
-import { fetchFromApiWithFallback } from "../utils/apiCrawler.js";
+import { fetchFromApiWithFallback, stripHtml } from "../utils/apiCrawler.js";
 import { decideStrategy, recordOutcome } from "../utils/strategyEngine.js";
 
 const log = makeLogger("crawler:devpost");
@@ -14,32 +14,47 @@ const DEVPOST_URL = "https://devpost.com/hackathons";
 const EXPECTED_MIN_RESULTS = Number(process.env.CRAWLER_DEVPOST_MIN_RESULTS || 5);
 
 /**
- * API integration config — OFF by default (DEVPOST_API_ENABLED unset/false).
- * An array so a second/backup endpoint can be added later and
- * fetchFromApiWithFallback() will try them in order automatically — only
- * one entry is populated today.
+ * Verified against the live endpoint (checked 2026-10-30):
+ *   GET https://devpost.com/api/hackathons?status=open&page=1&per_page=40
+ *   -> { hackathons: [...], meta: { total_count, per_page } }
  *
- * HONEST STATUS: `itemsPath` and `fields` below are best-guess placeholders,
- * not a confirmed response shape — no verified public Devpost API is known
- * as of this writing (see utils/apiDetector.js's weekly probe). Do NOT flip
- * DEVPOST_API_ENABLED=true until you've hit the real endpoint yourself,
- * inspected the actual JSON, and corrected `itemsPath`/`fields` to match.
- * The integration/parsing/fallback-switching code itself is real and wired
- * in below; only the specific field mapping is a placeholder.
+ * `status=open` is what makes this usable: the unfiltered listing reports
+ * 14,207 hackathons, nearly all of them finished, while the open filter
+ * reports 48. The server caps per_page at 40, so those 48 take two pages.
+ *
+ * An array so a second/backup endpoint can be added later and
+ * fetchFromApiWithFallback() will try them in order automatically.
  */
-const DEVPOST_API_CONFIGS =
+export const DEVPOST_API_CONFIGS =
   process.env.DEVPOST_API_ENABLED === "true"
     ? [
         {
           url: process.env.DEVPOST_API_URL || "https://devpost.com/api/hackathons",
+          params: { status: "open" },
           itemsPath: "hackathons",
           fields: {
             title: "title",
             link: "url",
+            // A display range ("Aug 26 - Oct 30, 2026") — parseDateRange()
+            // turns it into a real start/end pair.
             dateText: "submission_period_dates",
-            location: "displayed_location.location",
+            location: (item) => item.displayed_location?.location,
             mode: (item) =>
               /online/i.test(item.displayed_location?.location || "") ? "online" : "offline",
+            isOnline: (item) => /online/i.test(item.displayed_location?.location || ""),
+            organizer: "organization_name",
+            // Arrives as "$<span data-currency-value>50,000</span>".
+            prizePool: (item) => stripHtml(item.prize_amount),
+            tags: (item) => (item.themes || []).map((theme) => theme.name),
+            sourceName: () => "Devpost",
+            sourceUrl: () => "https://devpost.com/hackathons",
+          },
+          pagination: {
+            pageParam: "page",
+            perPageParam: "per_page",
+            perPage: 40,
+            maxPages: 3,
+            maxResults: 120,
           },
         },
         // Add a backup/mirror endpoint here if one ever exists — it'll be
