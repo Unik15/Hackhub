@@ -37,11 +37,15 @@ const BLOCKED_TITLES = new Set([
 
 const UNSTOP_BASE_URL = "https://unstop.com";
 
+// Verified against the live endpoint, so the API is tried first and the flag
+// exists to turn it OFF rather than to opt in. Set UNSTOP_API_ENABLED=false to
+// force HTML scraping (e.g. if Unstop starts rejecting the requests).
 const UNSTOP_API_ENABLED =
-  process.env.UNSTOP_API_ENABLED === "true";
+  process.env.UNSTOP_API_ENABLED !== "false";
 
 const UNSTOP_API_URL =
-  process.env.UNSTOP_API_URL?.trim() || null;
+  process.env.UNSTOP_API_URL?.trim() ||
+  "https://unstop.com/api/public/opportunity/search";
 
 /**
  * Verified against the live endpoint (checked 2026-10-30):
@@ -58,7 +62,7 @@ const UNSTOP_API_URL =
  * mapped directly instead of being routed through dateText.
  */
 export const UNSTOP_API_CONFIGS =
-  UNSTOP_API_ENABLED && UNSTOP_API_URL
+  UNSTOP_API_ENABLED
     ? [
         {
           url: UNSTOP_API_URL,

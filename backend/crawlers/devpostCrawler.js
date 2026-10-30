@@ -26,7 +26,7 @@ const EXPECTED_MIN_RESULTS = Number(process.env.CRAWLER_DEVPOST_MIN_RESULTS || 5
  * fetchFromApiWithFallback() will try them in order automatically.
  */
 export const DEVPOST_API_CONFIGS =
-  process.env.DEVPOST_API_ENABLED === "true"
+  process.env.DEVPOST_API_ENABLED !== "false"
     ? [
         {
           url: process.env.DEVPOST_API_URL || "https://devpost.com/api/hackathons",

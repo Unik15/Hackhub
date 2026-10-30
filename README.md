@@ -98,14 +98,17 @@ directly, otherwise rate limiting buckets every request under the proxy's IP.
   function per field for anything needing real logic). `fetchFromApiWithFallback(configs)` tries a
   *list* of configs in order — API→API fallback, not just API→scraping. Both
   `devpostCrawler.js`/`unstopCrawler.js` now try their API config as **Layer 0**, before any HTML
-  scraping — if it returns results, scraping is skipped entirely for that run; if it fails, isn't
-  configured, or returns nothing, execution falls straight through to the existing selector →
-  structural → Puppeteer → AI chain with zero special-casing needed. **Honest status:** the
-  `DEVPOST_API_ENABLED`/`UNSTOP_API_ENABLED` flags are `false` by default, and the `itemsPath`/
-  `fields` in each config are unverified placeholders — no confirmed public API is known for either
-  source as of this writing. The integration/parsing/switching code is real and production-ready;
-  only the specific endpoint URL and response shape need to be confirmed and corrected before
-  flipping either flag on.
+  scraping — if it returns enough results, scraping is skipped entirely for that run; if it fails,
+  isn't configured, or comes back thin, execution falls through to the existing selector →
+  structural → Puppeteer → AI chain with zero special-casing needed. **Status:** both endpoints are
+  verified against the live sites. Devpost's `?status=open` narrows 14,207 listings to ~48 open
+  ones (two pages at the 40-per-page cap); Unstop pages 20 at a time and its finished events are
+  filtered client-side because it ignores status/region/sort params. The API path is therefore on
+  by default — set `DEVPOST_API_ENABLED=false` or `UNSTOP_API_ENABLED=false` to force HTML
+  scraping. `decideStrategy()` still skips the API after `STRATEGY_API_FAILURE_THRESHOLD`
+  consecutive failures, and a result set below `CRAWLER_*_MIN_RESULTS` is compared against the
+  scrape instead of replacing it. Known gap: `organizer` and `prizePool` are parsed but have no
+  columns in `hackathons` yet, so `upsertHackathon()` drops them — that needs a migration.
 - **Strict timeout handling** — three real gaps closed: `geocodeCity()` had no request timeout at
   all (an unresponsive Maps API could hang a whole crawl run — now capped by `GEOCODE_TIMEOUT_MS`);
   each source crawler (Devpost/Unstop/College) now has a hard wall-clock cap
