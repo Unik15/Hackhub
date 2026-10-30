@@ -66,6 +66,10 @@ endpoint/model, Google Maps key, SMTP creds, Twilio creds, and cron expressions.
 Set `CLIENT_URL` on the backend to your deployed frontend origin (for CORS), and
 `VITE_API_BASE_URL` on the frontend to your deployed backend's `/api` URL.
 
+`TRUST_PROXY_HOPS` defaults to `1` in production, which matches the single proxy
+Render/Railway put in front of the API. Set it to `0` if the backend is reachable
+directly, otherwise rate limiting buckets every request under the proxy's IP.
+
 ## What's stubbed vs. production-ready
 
 - **Auth, models, rate limiting, geo filtering, AI ranking with fallback, notification

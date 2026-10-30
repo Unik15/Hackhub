@@ -19,6 +19,29 @@ import actionsRoutes from "./routes/actions.js";
 
 const app = express();
 
+/**
+ * Render/Railway/Heroku terminate TLS at their own proxy, so the socket address
+ * is the proxy, not the visitor. Without this setting every request shares one
+ * express-rate-limit bucket — the 20-per-15-minute auth limiter would then apply
+ * to all users combined — and req.ip (also used to key anonymous dedupe) would
+ * report the proxy.
+ *
+ * Defaults to one hop in production and none elsewhere. Set TRUST_PROXY_HOPS to
+ * match your topology, or 0 when the API is exposed directly. Unparseable values
+ * fall back to "trust nothing" so a typo can never make X-Forwarded-For spoofable.
+ */
+function trustProxyHops() {
+  const raw = process.env.TRUST_PROXY_HOPS;
+  if (raw === undefined || raw.trim() === "") {
+    return process.env.NODE_ENV === "production" ? 1 : 0;
+  }
+
+  const hops = Number(raw);
+  return Number.isInteger(hops) && hops >= 0 ? hops : 0;
+}
+
+app.set("trust proxy", trustProxyHops());
+
 app.use(helmet());
 app.use(
   cors({
