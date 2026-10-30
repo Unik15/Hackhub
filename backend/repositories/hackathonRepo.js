@@ -78,46 +78,46 @@ export function buildDedupeHash({ title, url, platform }) {
 // 🔥 UPSERT (CRAWLER)
 // =========================
 export async function upsertHackathon(data) {
-  try {
-    const dedupe_hash = buildDedupeHash({
-      title: data.title,
-      url: data.url,
-      platform: data.platform,
-    });
+  const dedupe_hash = buildDedupeHash({
+    title: data.title,
+    url: data.url,
+    platform: data.platform,
+  });
 
-    const row = {
-      title: data.title,
-      description: data.description || "",
-      url: data.url,
-      platform: data.platform,
-      location: data.location || "",
-      latitude: data.latitude ?? null,
-      longitude: data.longitude ?? null,
-      mode: data.mode || (data.isOnline ? "online" : "offline"),
-      domain: data.domain || [],
-      tags: data.tags || [],
-      registration_deadline: data.registrationDeadline ?? null,
-      start_date: data.startDate,
-      end_date: data.endDate,
-      is_online: data.isOnline ?? true,
-      status: data.status || "upcoming",
-      dedupe_hash,
+  const row = {
+    title: data.title,
+    description: data.description || "",
+    url: data.url,
+    platform: data.platform,
+    location: data.location || "",
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    mode: data.mode || (data.isOnline ? "online" : "offline"),
+    domain: data.domain || [],
+    tags: data.tags || [],
+    registration_deadline: data.registrationDeadline ?? null,
+    start_date: data.startDate,
+    end_date: data.endDate,
+    is_online: data.isOnline ?? true,
+    status: data.status || "upcoming",
+    dedupe_hash,
 
-      // views_count/apply_count/trending_score are omitted on purpose: the
-      // columns default to 0 on insert, and including them here would reset
-      // engagement counters every time the crawler re-upserts a listing.
-    };
+    // views_count/apply_count/trending_score are omitted on purpose: the
+    // columns default to 0 on insert, and including them here would reset
+    // engagement counters every time the crawler re-upserts a listing.
+  };
 
-    const { error } = await adminClient
-      .from("hackathons")
-      .upsert(row, { onConflict: "dedupe_hash" });
+  const { error } = await adminClient
+    .from("hackathons")
+    .upsert(row, { onConflict: "dedupe_hash" });
 
-    if (error) throw error;
-
-  } catch (err) {
-    console.error("[upsertHackathon ERROR]:", err.message);
-  }
+  // Throwing is the whole point: retryAsync only retries on a rejected
+  // promise, and the orchestrator's failure counter plus the
+  // "high failure rate" alert both depend on this reaching them. Swallowing
+  // the error here made a run that wrote nothing look completely healthy.
+  if (error) throw error;
 }
+
 
 /**
  * Creates an organizer-submitted listing in a pending state. Pending entries
@@ -318,17 +318,21 @@ export async function findById(id) {
 // ⏳ EXPIRE OLD (CRON)
 // =========================
 export async function expireOld() {
-  try {
-    const now = new Date().toISOString();
+  const now = new Date().toISOString();
 
-    const { error } = await adminClient
-      .from("hackathons")
-      .update({ status: "expired" })
-      .or(`end_date.lt.${now},and(end_date.is.null,start_date.lt.${now})`);
+  const { data, error } = await adminClient
+    .from("hackathons")
+    .update({ status: "expired" })
+    // Skip rows that are already expired: re-updating them every night fires
+    // the trending trigger for no reason and makes the count meaningless.
+    .neq("status", "expired")
+    .or(`end_date.lt.${now},and(end_date.is.null,start_date.lt.${now})`)
+    .select("id");
 
-    if (error) throw error;
+  // Same reasoning as upsertHackathon: the scheduler logs the returned count,
+  // so a failure has to surface instead of silently reporting "Expired 0".
+  if (error) throw error;
 
-  } catch (err) {
-    console.error("[expireOld ERROR]:", err.message);
-  }
+  return data?.length ?? 0;
 }
+
