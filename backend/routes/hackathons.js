@@ -61,8 +61,11 @@ router.get("/nearby", async (req, res, next) => {
     }
 
     const candidates = await hackathonRepo.findLocatedActive();
-    const items = filterByProximity(candidates, userLocation, radius, { includeOnline: false })
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+    // A location search should still be useful when the crawler has no
+    // geocoded in-person listings nearby. Keep online events as a fallback;
+    // filterByProximity appends them after any physical matches.
+    const items = filterByProximity(candidates, userLocation, radius, { includeOnline: true })
+      .sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
 
     res.json({ items, location: userLocation.formattedAddress || city, radiusKm: radius, total: items.length });
   } catch (err) {

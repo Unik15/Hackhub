@@ -294,7 +294,11 @@ export async function findActive(limit = 200, offset = 0) {
   }
 }
 
-/** Returns active physical listings; distance filtering lives in geoService. */
+/**
+ * Returns active physical listings plus online fallback listings. Distance
+ * filtering lives in geoService, which keeps the online events after nearby
+ * physical matches.
+ */
 export async function findLocatedActive(limit = 500) {
   try {
     limit = Math.min(Math.max(Number(limit) || 500, 1), 500);
@@ -303,9 +307,7 @@ export async function findLocatedActive(limit = 500) {
       .from("hackathons")
       .select(LIST_COLUMNS)
       .in("status", ["upcoming", "active"])
-      .eq("is_online", false)
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
+      .or("is_online.eq.true,and(latitude.not.is.null,longitude.not.is.null)")
       .order("start_date", { ascending: true, nullsFirst: false })
       .range(0, limit - 1)
       .throwOnError();
