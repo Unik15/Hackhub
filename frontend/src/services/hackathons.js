@@ -6,10 +6,30 @@ import { axiosClient } from "./axiosClient";
  * backend can do the filtering once you're ready to move it server-side.
  */
 export async function fetchHackathons(params = {}) {
-  const { data } = await axiosClient.get("/hackathons", { params });
-  // Tolerate either a raw array or a { data: [...] } envelope from the API.
-  return Array.isArray(data) ? data :  data?.items ?? data?.data ?? [];
+  // The API paginates (default 20, max 50 per request). Explore filters
+  // client-side, so walk every page and return the full list.
+  const limit = 50;
+  let page = 1;
+  let all = [];
+  let total = Infinity;
+
+  while (all.length < total) {
+    const { data } = await axiosClient.get("/hackathons", {
+      params: { ...params, page, limit },
+    });
+    const items = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+    all = all.concat(items);
+    total = Number(data?.total ?? all.length);
+
+    if (items.length < limit) break;
+    page += 1;
+  }
+
+  return all;
 }
+
+// Backwards-compatible alias for callers using the explicit "all pages" name.
+export const fetchAllHackathons = fetchHackathons;
 
 export async function fetchHackathonById(id) {
   const { data } = await axiosClient.get(`/hackathons/${id}`);
