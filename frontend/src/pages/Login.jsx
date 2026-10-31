@@ -20,6 +20,7 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [redirecting, setRedirecting] = useState(false);
+  const [formError, setFormError] = useState("");
   const submittingRef = useRef(false);
 
   const {
@@ -28,22 +29,35 @@ export default function Login() {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: location.state?.email || "", password: "" },
   });
 
   const onSubmit = async (values) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
+    setFormError("");
     try {
       await login(values);
       toast({ title: "Welcome back 👋", description: "Redirecting you now…" });
       setRedirecting(true);
-      const dest = location.state?.from?.pathname || "/dashboard";
+      const dest = location.state?.from?.pathname || "/";
       setTimeout(() => navigate(dest, { replace: true }), 1000);
     } catch (err) {
-      // Backend contract: { success: false, message: "Invalid credentials" }
-      // getErrorMessage() already surfaces error.response.data.message.
-      toast({ variant: "destructive", title: "Couldn't log in", description: getErrorMessage(err, "Invalid credentials") });
+      if (err?.response?.data?.code === "ACCOUNT_NOT_FOUND") {
+        toast({
+          title: "Account not found",
+          description: "Create an account first, then log in.",
+        });
+        navigate("/signup", {
+          replace: true,
+          state: { email: values.email, reason: "no-account" },
+        });
+        return;
+      }
+
+      const message = getErrorMessage(err, "Couldn't log you in.");
+      setFormError(message);
+      toast({ variant: "destructive", title: "Couldn't log in", description: message });
     } finally {
       submittingRef.current = false;
     }
@@ -88,6 +102,12 @@ export default function Login() {
             className={authInputClass(errors.password)}
           />
         </Field>
+
+        {formError && (
+          <p role="alert" className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            {formError}
+          </p>
+        )}
 
         <AuthSubmitButton busy={busy} label="Log in" busyLabel="Logging in…" />
       </form>
