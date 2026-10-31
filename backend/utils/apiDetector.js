@@ -3,7 +3,7 @@ import path from "node:path";
 import { makeLogger } from "./logger.js";
 import { collectAlert, flushAlerts } from "../services/alertBatcher.js";
 import { fetchFromApi } from "./apiCrawler.js";
-import { DEVPOST_API_CONFIGS } from "../crawlers/devpostCrawler.js";
+import { DEVPOST_API_CONFIGS } from "../crawlers/sources/devpost.js";
 import { UNSTOP_API_CONFIGS } from "../crawlers/unstopCrawler.js";
 
 const log = makeLogger("api-detector");

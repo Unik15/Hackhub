@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { connectDB } from "../config/supabase.js";
 import { upsertHackathon, expireOld, buildDedupeHash } from "../repositories/hackathonRepo.js";
-import { crawlDevpost } from "./devpostCrawler.js";
+import { runSource } from "./runSource.js";
+import devpostSource from "./sources/devpost.js";
 import { crawlUnstop } from "./unstopCrawler.js";
 import { crawlCollegeSites } from "./collegeCrawler.js";
 import { geocodeCity } from "../services/geoService.js";
@@ -152,11 +153,11 @@ export async function runCrawlers() {
 
   try {
     const sourceNames = ["devpost", "unstop", "college", "reskilll"];
-    const [devpost, unstop, college,reskilll] = await Promise.allSettled([
-      withTimeout(crawlDevpost(), SOURCE_TIMEOUT_MS, "devpost crawler"),
+    const [devpost, unstop, college, reskilll] = await Promise.allSettled([
+      withTimeout(runSource(devpostSource), SOURCE_TIMEOUT_MS, "devpost crawler"),
       withTimeout(crawlUnstop(), SOURCE_TIMEOUT_MS, "unstop crawler"),
       withTimeout(crawlCollegeSites(), SOURCE_TIMEOUT_MS, "college crawler"),
-       withTimeout(crawlReskilll(), SOURCE_TIMEOUT_MS, "reskilll crawler"),
+      withTimeout(crawlReskilll(), SOURCE_TIMEOUT_MS, "reskilll crawler"),
     ]).then((results) =>
       results.map((r, i) => {
         const sourceName = sourceNames[i];
