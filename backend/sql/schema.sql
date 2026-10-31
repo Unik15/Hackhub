@@ -100,6 +100,9 @@ create table if not exists public.hackathons (
   end_date                timestamptz,
   registration_deadline   timestamptz,
 
+  organizer               text,
+  prize_pool              text,
+
   status                  public.hackathon_status not null default 'upcoming',
   trending_score          integer not null default 0,
   views_count             integer not null default 0,
