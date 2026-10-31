@@ -7,6 +7,7 @@ import Timeline from "@/components/Timeline";
 import OrganizerCard from "@/components/OrganizerCard";
 import Seo from "@/components/Seo";
 import { fetchHackathonById } from "@/services/hackathons";
+import { postAction } from "@/services/actions";
 import { formatDateRange } from "@/utils/date";
 import { getErrorMessage, isNotFound } from "@/utils/errors";
 
@@ -37,6 +38,11 @@ export default function HackathonDetails() {
     try {
       const data = await fetchHackathonById(id);
       setHackathon(data);
+      // Fire-and-forget view tracking: a listing counts a view when its
+      // detail page actually loads. Tracking failure must never break the
+      // page, and the backend's 2s dedupe window absorbs StrictMode's
+      // double-invoked effects in dev.
+      postAction({ hackathonId: data.id, actionType: "view" }).catch(() => {});
     } catch (err) {
       setError(
         isNotFound(err) ? "This hackathon couldn't be found." : getErrorMessage(err, "Something went wrong while loading this hackathon.")

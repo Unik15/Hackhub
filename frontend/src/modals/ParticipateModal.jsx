@@ -6,6 +6,7 @@ import { Rocket } from "lucide-react";
 import BaseModal from "@/modals/BaseModal";
 import { Button } from "@/components/ui/button";
 import { postParticipant } from "@/services/participants";
+import { postAction } from "@/services/actions";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -44,6 +45,9 @@ export default function ParticipateModal({ open, onClose, hackathonId, hackathon
     submittingRef.current = true;
     try {
       await postParticipant({ hackathonId, ...values });
+      // Fire-and-forget: bump apply_count for trending, never block the
+      // success toast on a tracking failure.
+      postAction({ hackathonId, actionType: "apply" }).catch(() => {});
       toast({
         title: "You're in 🚀",
         description: "Organizer will contact you soon.",
