@@ -34,9 +34,8 @@ export function AuthProvider({ children }) {
   };
 
   const signup = async (payload) => {
-    const data = await signupRequest(payload);
-    setUser(data?.user ?? data);
-    return data;
+    // Account creation does not establish a session; the user signs in next.
+    return signupRequest(payload);
   };
 
   const logout = async () => {

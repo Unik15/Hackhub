@@ -4,7 +4,13 @@
  * but falls back gracefully if a request bypassed that (e.g. non-axios throw).
  */
 export function getErrorMessage(err, fallback = "Something went wrong. Please try again.") {
-  return err?.friendlyMessage || err?.response?.data?.message || err?.message || fallback;
+  return (
+    err?.friendlyMessage ||
+    err?.response?.data?.message ||
+    err?.response?.data?.error ||
+    err?.message ||
+    fallback
+  );
 }
 
 export function isNotFound(err) {

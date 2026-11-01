@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,8 +26,9 @@ const signupSchema = z
 export default function Signup() {
   const { signup } = useAuth();
   const navigate = useNavigate();
-  const [redirecting, setRedirecting] = useState(false);
+  const location = useLocation();
   const submittingRef = useRef(false);
+  const [formError, setFormError] = useState("");
 
   const {
     register,
@@ -35,25 +36,33 @@ export default function Signup() {
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(signupSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "", college: "" },
+    defaultValues: {
+      name: "",
+      email: location.state?.email || "",
+      password: "",
+      confirmPassword: "",
+      college: "",
+    },
   });
 
   const onSubmit = async ({ confirmPassword, ...payload }) => {
     if (submittingRef.current) return;
     submittingRef.current = true;
+    setFormError("");
     try {
       await signup(payload);
-      toast({ title: "Account created 🎉", description: "Redirecting you now…" });
-      setRedirecting(true);
-      setTimeout(() => navigate("/dashboard", { replace: true }), 1000);
+      toast({ title: "Account created", description: "Please sign in to continue." });
+      navigate("/login", { replace: true, state: { email: payload.email } });
     } catch (err) {
-      toast({ variant: "destructive", title: "Couldn't sign up", description: getErrorMessage(err) });
+      const message = getErrorMessage(err, "Couldn't create your account.");
+      setFormError(message);
+      toast({ variant: "destructive", title: "Couldn't sign up", description: message });
     } finally {
       submittingRef.current = false;
     }
   };
 
-  const busy = isSubmitting || redirecting;
+  const busy = isSubmitting;
 
   return (
     <AuthLayout
@@ -69,6 +78,12 @@ export default function Signup() {
       }
     >
       <Seo title="Sign up" noindex />
+
+      {location.state?.reason === "no-account" && (
+        <p role="status" className="mb-5 rounded border border-[#F2A93B]/40 bg-[#F2A93B]/10 px-3 py-2 text-xs text-white/80">
+          No account exists for <strong>{location.state.email}</strong>. Create one below, then log in.
+        </p>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <Field label="Full name" error={errors.name?.message}>
@@ -125,6 +140,12 @@ export default function Signup() {
             className={authInputClass(errors.college)}
           />
         </Field>
+
+        {formError && (
+          <p role="alert" className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            {formError}
+          </p>
+        )}
 
         <AuthSubmitButton busy={busy} label="Create account" busyLabel="Creating account…" />
       </form>

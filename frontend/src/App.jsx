@@ -2,9 +2,10 @@ import React, { lazy } from "react";
 import { Routes, Route } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { Toaster } from "@/components/ui/toaster";
 
 // Route-level code splitting — each page ships as its own chunk.
-const Home = lazy(() => import("@/pages/Home"));
+const Home = lazy(() => import("@/pages/home"));
 const HackathonList = lazy(() => import("@/pages/HackathonList"));
 const HackathonDetails = lazy(() => import("@/pages/HackathonDetails"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -14,6 +15,7 @@ const Signup = lazy(() => import("@/pages/Signup"));
 
 export default function App() {
   return (
+    <>
     <Routes>
       {/* Auth pages own their full-screen layout — no navbar/ambient wrapper */}
       <Route path="/login" element={<Login />} />
@@ -41,5 +43,7 @@ export default function App() {
         />
       </Route>
     </Routes>
+    <Toaster />
+    </>
   );
 }

@@ -3,7 +3,6 @@ import { Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import PageLoader from "@/components/PageLoader";
-import { Toaster } from "@/components/ui/toaster";
 
 export default function MainLayout() {
   const location = useLocation();
@@ -25,7 +24,6 @@ export default function MainLayout() {
           </Suspense>
         </motion.main>
       </AnimatePresence>
-      <Toaster />
     </div>
   );
 }

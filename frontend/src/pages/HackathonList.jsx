@@ -3,7 +3,7 @@ import { SearchX, Search, ChevronDown, AlertTriangle, RotateCcw, MapPin, Navigat
 import HackathonCard from "@/components/HackathonCard";
 import HackathonCardSkeleton from "@/components/HackathonCardSkeleton";
 import Seo from "@/components/Seo";
-import { fetchHackathons, fetchNearbyHackathons } from "@/services/hackathons";
+import { fetchAllHackathons, fetchNearbyHackathons } from "@/services/hackathons";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -30,7 +30,7 @@ export default function HackathonList() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchHackathons();
+      const data = await fetchAllHackathons();
       setHackathons(data);
       setNearbyLocation("");
     } catch (err) {
