@@ -16,6 +16,7 @@ import recommendationRoutes from "./routes/recommendations.js";
 import opsRoutes from "./routes/ops.js";
 import analyticsRoutes from "./routes/analytics.js";
 import actionsRoutes from "./routes/actions.js";
+import participantsRoutes from "./routes/participants.js";
 
 const app = express();
 
@@ -62,6 +63,7 @@ app.use("/api/recommendations", recommendationRoutes);
 app.use("/api/ops", opsRoutes);
 app.use("/api/analytics", analyticsRoutes); 
 app.use("/api/actions", actionsRoutes); 
+app.use("/api/participants", participantsRoutes);
 
 // Central error handler — keeps stack traces out of client responses in prod
 app.use((err, req, res, next) => {

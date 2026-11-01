@@ -143,6 +143,23 @@ create index if not exists idx_saved_hackathons_hackathon
   on public.saved_hackathons (hackathon_id);
 
 -- ============================================================
+-- PARTICIPANTS
+-- ============================================================
+create table if not exists public.participants (
+  id            uuid primary key default gen_random_uuid(),
+  hackathon_id  uuid not null references public.hackathons (id) on delete cascade,
+  name          text not null check (char_length(name) between 1 and 120),
+  email         text not null check (char_length(email) between 3 and 180),
+  college       text not null check (char_length(college) between 1 and 150),
+  created_at    timestamptz not null default now()
+);
+
+create unique index if not exists participants_hackathon_email_lower_key
+  on public.participants (hackathon_id, lower(email));
+create index if not exists idx_participants_hackathon_created
+  on public.participants (hackathon_id, created_at desc);
+
+-- ============================================================
 -- ENGAGEMENT / ANALYTICS
 -- ============================================================
 create table if not exists public.user_actions (
@@ -257,6 +274,7 @@ grant execute on function public.increment_apply(uuid) to service_role;
 alter table public.users enable row level security;
 alter table public.hackathons enable row level security;
 alter table public.saved_hackathons enable row level security;
+alter table public.participants enable row level security;
 alter table public.user_actions enable row level security;
 alter table public.analytics_events enable row level security;
 
