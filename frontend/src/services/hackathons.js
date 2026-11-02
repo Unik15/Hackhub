@@ -6,33 +6,30 @@ import { axiosClient } from "./axiosClient";
  * backend can do the filtering once you're ready to move it server-side.
  */
 export async function fetchHackathons(params = {}) {
-  const { data } = await axiosClient.get("/hackathons", { params });
-  // Tolerate either a raw array or a { data: [...] } envelope from the API.
-  return Array.isArray(data) ? data :  data?.items ?? data?.data ?? [];
-}
+  // The API paginates (default 20, max 50 per request). Explore filters
+  // client-side, so walk every page and return the full list.
+  const limit = 50;
+  let page = 1;
+  let all = [];
+  let total = Infinity;
 
-/**
- * Fetches every page of /hackathons (server caps each page at 50) and
- * concatenates them, so client-side filtering sees the full dataset.
- * Stops after `maxPages` (safety cap) or when a short page comes back.
- */
-export async function fetchAllHackathons(params = {}) {
-  const PAGE_SIZE = 50; // backend MAX_LIMIT
-  const maxPages = 20;  // safety cap: up to 1000 hackathons
-  const items = [];
-
-  for (let page = 1; page <= maxPages; page++) {
+  while (all.length < total) {
     const { data } = await axiosClient.get("/hackathons", {
-      params: { ...params, page, limit: PAGE_SIZE },
+      params: { ...params, page, limit },
     });
-    if (Array.isArray(data)) break; // unexpected shape — bail with what we have
-    const batch = data?.items ?? data?.data ?? [];
-    items.push(...batch);
-    if (batch.length < PAGE_SIZE) break; // last page reached
+    const items = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
+    all = all.concat(items);
+    total = Number(data?.total ?? all.length);
+
+    if (items.length < limit) break;
+    page += 1;
   }
 
-  return items;
+  return all;
 }
+
+// Backwards-compatible alias for callers using the explicit "all pages" name.
+export const fetchAllHackathons = fetchHackathons;
 
 export async function fetchHackathonById(id) {
   const { data } = await axiosClient.get(`/hackathons/${id}`);

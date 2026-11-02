@@ -28,9 +28,18 @@ router.post(
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     try {
-      const { name, email, password, college } = req.body;
-      const user = await createUser({ name, email, password, college });
-      sendSession(res, user, 201);
+      const { name, email, password } = req.body;
+      const user = await createUser({ name, email, password });
+
+      // Registration intentionally does not create a session: the user must
+      // sign in explicitly after creating their account.
+      const { maxAge, ...cookieOptions } = sessionCookieOptions();
+      res.clearCookie(SESSION_COOKIE_NAME, cookieOptions);
+
+      res.status(201).json({
+        user: { id: user.id, name: user.name, email: user.email },
+        message: "Account created. Please sign in.",
+      });
     } catch (err) {
       if (err.status === 409) return res.status(409).json({ error: err.message });
       next(err);
@@ -49,10 +58,20 @@ router.post(
     try {
       const { email, password } = req.body;
       const row = await findByEmailWithPassword(email);
-      if (!row) return res.status(401).json({ error: "Invalid credentials" });
+      if (!row) {
+        return res.status(404).json({
+          code: "ACCOUNT_NOT_FOUND",
+          error: "No account found for this email. Please sign up first.",
+        });
+      }
 
       const match = await comparePassword(row, password);
-      if (!match) return res.status(401).json({ error: "Invalid credentials" });
+      if (!match) {
+        return res.status(401).json({
+          code: "INVALID_PASSWORD",
+          error: "Incorrect password. Please try again.",
+        });
+      }
 
       sendSession(res, row);
     } catch (err) {
