@@ -8,6 +8,7 @@ import { Field, authInputClass, AuthSubmitButton } from "@/components/auth/AuthF
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
+import { rememberPendingEmail } from "@/utils/verification";
 import Seo from "@/components/Seo";
 
 const signupSchema = z
@@ -50,10 +51,45 @@ export default function Signup() {
     submittingRef.current = true;
     setFormError("");
     try {
-      await signup(payload);
-      toast({ title: "Account created", description: "Please sign in to continue." });
-      navigate("/login", { replace: true, state: { email: payload.email } });
+      const result = await signup(payload);
+      const email = result?.user?.email || payload.email;
+      const resendAfterSeconds = result?.verification?.resendAfterSeconds ?? 60;
+
+      rememberPendingEmail(email);
+      toast({
+        title: "Verification code sent",
+        description: "Enter the 6-digit code from your email to activate your account.",
+      });
+      navigate("/verify-email", {
+        replace: true,
+        state: { email, resendAfterSeconds },
+      });
     } catch (err) {
+      const apiError = err?.response?.data;
+
+      if (
+        apiError?.code === "ACCOUNT_PENDING_VERIFICATION" ||
+        apiError?.code === "OTP_RESEND_COOLDOWN"
+      ) {
+        const email = apiError.email || payload.email;
+        const resendAfterSeconds =
+          apiError.retryAfterSeconds ?? apiError.verification?.resendAfterSeconds ?? 60;
+
+        rememberPendingEmail(email);
+        toast({
+          title: "Email already pending verification",
+          description:
+            apiError.code === "OTP_RESEND_COOLDOWN"
+              ? `Please wait ${resendAfterSeconds}s before requesting another code.`
+              : "Enter the code we sent, or request a new one below.",
+        });
+        navigate("/verify-email", {
+          replace: true,
+          state: { email, resendAfterSeconds },
+        });
+        return;
+      }
+
       const message = getErrorMessage(err, "Couldn't create your account.");
       setFormError(message);
       toast({ variant: "destructive", title: "Couldn't sign up", description: message });

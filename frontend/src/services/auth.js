@@ -12,7 +12,19 @@ export async function loginRequest({ email, password }) {
 }
 
 export async function signupRequest(payload) {
-  const { data } = await axiosClient.post("/auth/signup", payload);
+  const { data } = await axiosClient.post("/auth/signup", payload, { timeout: 20000 });
+  return data;
+}
+
+/** Verify the 6-digit code emailed during registration. */
+export async function verifyEmailOtp({ email, otp }) {
+  const { data } = await axiosClient.post("/auth/verify-otp", { email, otp });
+  return data;
+}
+
+/** Request a fresh code; the backend enforces the 60-second cooldown. */
+export async function resendEmailOtp({ email }) {
+  const { data } = await axiosClient.post("/auth/resend-otp", { email }, { timeout: 20000 });
   return data;
 }
 

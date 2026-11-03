@@ -8,6 +8,7 @@ import { Field, authInputClass, AuthSubmitButton } from "@/components/auth/AuthF
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
+import { rememberPendingEmail } from "@/utils/verification";
 import Seo from "@/components/Seo";
 
 const loginSchema = z.object({
@@ -37,7 +38,23 @@ export default function Login() {
     submittingRef.current = true;
     setFormError("");
     try {
-      await login(values);
+      const result = await login(values);
+      const loggedInUser = result?.user ?? result;
+
+      if (loggedInUser?.emailVerified === false) {
+        const email = loggedInUser.email || values.email;
+        rememberPendingEmail(email);
+        toast({
+          title: "Verify your email",
+          description: "Enter the code we sent to finish activating your account.",
+        });
+        setRedirecting(true);
+        setTimeout(() => {
+          navigate("/verify-email", { replace: true, state: { email } });
+        }, 900);
+        return;
+      }
+
       toast({ title: "Welcome back 👋", description: "Redirecting you now…" });
       setRedirecting(true);
       const dest = location.state?.from?.pathname || "/";
@@ -79,6 +96,15 @@ export default function Login() {
       }
     >
       <Seo title="Log in" noindex />
+
+      {location.state?.verified && (
+        <p
+          role="status"
+          className="mb-5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+        >
+          Email verified successfully. Log in to continue.
+        </p>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <Field label="Email" error={errors.email?.message}>
