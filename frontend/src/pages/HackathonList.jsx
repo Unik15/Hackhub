@@ -1,18 +1,25 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SearchX, Search, ChevronDown, AlertTriangle, RotateCcw, MapPin, Navigation } from "lucide-react";
 import HackathonCard from "@/components/HackathonCard";
 import HackathonCardSkeleton from "@/components/HackathonCardSkeleton";
+import Pagination from "@/components/Pagination";
 import Seo from "@/components/Seo";
 import { fetchAllHackathons, fetchNearbyHackathons } from "@/services/hackathons";
 import { useDebounce } from "@/hooks/useDebounce";
 import { getErrorMessage } from "@/utils/errors";
 
 const ParticipateModal = lazy(() => import("@/modals/ParticipateModal"));
+const PAGE_SIZE = 21;
 
 export default function HackathonList() {
   const [hackathons, setHackathons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const parsedPage = Number.parseInt(searchParams.get("page") ?? "1", 10);
+  const requestedPage = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
 
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebounce(query, 400);
@@ -22,17 +29,35 @@ export default function HackathonList() {
   const [nearbyLocation, setNearbyLocation] = useState("");
   const [locating, setLocating] = useState(false);
 
+  const resultsRef = useRef(null);
+  const shouldScrollRef = useRef(false);
+
   // Modal only mounts (and its chunk only loads) after the first Participate click.
   const [participateHackathon, setParticipateHackathon] = useState(null);
   const [participateOpen, setParticipateOpen] = useState(false);
 
+  const setPageParam = (nextPage, { replace = false } = {}) => {
+    const params = new URLSearchParams(searchParams);
+    if (nextPage <= 1) {
+      if (!params.has("page")) return;
+      params.delete("page");
+    } else {
+      params.set("page", String(nextPage));
+    }
+    setSearchParams(params, { replace });
+  };
+
+  const resetPageParam = () => setPageParam(1, { replace: true });
+
   const loadAll = async () => {
+    const wasNearby = Boolean(nearbyLocation);
     setLoading(true);
     setError(null);
     try {
       const data = await fetchAllHackathons();
       setHackathons(data);
       setNearbyLocation("");
+      if (wasNearby) resetPageParam();
     } catch (err) {
       setError(getErrorMessage(err, "Something went wrong while loading hackathons."));
     } finally {
@@ -55,6 +80,7 @@ export default function HackathonList() {
       setHackathons(result.items || []);
       setNearbyLocation(result.location || trimmedCity);
       setPlatform("all");
+      resetPageParam();
     } catch (err) {
       setError(getErrorMessage(err, "Couldn't find nearby hackathons. Please try another city."));
     } finally {
@@ -83,6 +109,7 @@ export default function HackathonList() {
           setHackathons(result.items || []);
           setNearbyLocation(result.location || "your current location");
           setPlatform("all");
+          resetPageParam();
         } catch (err) {
           setError(getErrorMessage(err, "Couldn't find hackathons near your current location."));
         } finally {
@@ -126,6 +153,41 @@ export default function HackathonList() {
     });
   }, [hackathons, debouncedQuery, platform]);
 
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const currentPage = totalPages === 0 ? 1 : Math.min(requestedPage, totalPages);
+
+  const paginated = useMemo(() => {
+    if (totalPages === 0) return [];
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, currentPage, totalPages]);
+
+  useEffect(() => {
+    if (loading || error || totalPages === 0 || requestedPage <= totalPages) return;
+
+    const params = new URLSearchParams(searchParams);
+    params.set("page", String(totalPages));
+    setSearchParams(params, { replace: true });
+  }, [loading, error, requestedPage, totalPages, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!shouldScrollRef.current) return;
+    shouldScrollRef.current = false;
+
+    const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    resultsRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+  }, [currentPage]);
+
+  const handlePageChange = (nextPage) => {
+    if (nextPage < 1 || nextPage > totalPages || nextPage === currentPage) return;
+
+    shouldScrollRef.current = true;
+    setPageParam(nextPage);
+  };
+
   const handleParticipate = (hackathon) => {
     setParticipateHackathon(hackathon);
     setParticipateOpen(true);
@@ -154,7 +216,10 @@ export default function HackathonList() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              resetPageParam();
+            }}
             placeholder="Search by title, location, platform…"
             className="w-full rounded-md border border-border bg-card py-2.5 pl-9 pr-3 text-sm font-body text-foreground outline-none transition-colors focus:border-primary"
           />
@@ -163,7 +228,10 @@ export default function HackathonList() {
         <div className="relative">
           <select
             value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
+            onChange={(e) => {
+              setPlatform(e.target.value);
+              resetPageParam();
+            }}
             disabled={loading || hackathons.length === 0}
             className="appearance-none rounded-md border border-border bg-card py-2.5 pl-3 pr-9 text-sm font-body text-foreground outline-none transition-colors focus:border-primary disabled:opacity-50"
           >
@@ -186,7 +254,10 @@ export default function HackathonList() {
         <input
           id="nearby-city"
           value={city}
-          onChange={(event) => setCity(event.target.value)}
+          onChange={(event) => {
+            setCity(event.target.value);
+            resetPageParam();
+          }}
           placeholder="Enter your city, e.g. Delhi"
           disabled={loading}
           className="min-w-[220px] flex-1 rounded-md border border-border bg-background px-3 py-2.5 text-sm font-body text-foreground outline-none transition-colors focus:border-primary disabled:opacity-50"
@@ -195,7 +266,10 @@ export default function HackathonList() {
         <select
           id="nearby-radius"
           value={radiusKm}
-          onChange={(event) => setRadiusKm(event.target.value)}
+          onChange={(event) => {
+            setRadiusKm(event.target.value);
+            resetPageParam();
+          }}
           disabled={loading}
           className="rounded-md border border-border bg-background px-3 py-2.5 text-sm font-body text-foreground outline-none focus:border-primary disabled:opacity-50"
         >
@@ -234,41 +308,53 @@ export default function HackathonList() {
       </form>
 
       {/* Content */}
-      {loading ? (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <HackathonCardSkeleton key={i} />
-          ))}
-        </div>
-      ) : error ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 py-16 text-center">
-          <AlertTriangle size={26} className="text-destructive" />
-          <p className="font-ui text-sm text-foreground">{error}</p>
-          <button
-            onClick={nearbyLocation ? loadNearby : loadAll}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm font-ui text-foreground hover:bg-muted"
-          >
-            <RotateCcw size={14} /> Retry
-          </button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center">
-          <SearchX size={26} className="text-muted-foreground" />
-          <p className="font-ui text-sm text-foreground">
-            {hackathons.length === 0 ? "No hackathons available yet" : "No hackathons match your search"}
-          </p>
-          <p className="max-w-xs text-xs text-muted-foreground">
-            {hackathons.length === 0
-              ? "Check back soon, or submit one of your own."
-              : "Try a different keyword or clear the platform filter."}
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((h, i) => (
-            <HackathonCard key={h.id} hackathon={h} index={i} onParticipate={handleParticipate} />
-          ))}
-        </div>
+      <div ref={resultsRef} className="scroll-mt-24">
+        {loading ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <HackathonCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 py-16 text-center">
+            <AlertTriangle size={26} className="text-destructive" />
+            <p className="font-ui text-sm text-foreground">{error}</p>
+            <button
+              onClick={nearbyLocation ? loadNearby : loadAll}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border px-4 py-2 text-sm font-ui text-foreground hover:bg-muted"
+            >
+              <RotateCcw size={14} /> Retry
+            </button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card py-16 text-center">
+            <SearchX size={26} className="text-muted-foreground" />
+            <p className="font-ui text-sm text-foreground">
+              {hackathons.length === 0 ? "No hackathons available yet" : "No hackathons match your search"}
+            </p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              {hackathons.length === 0
+                ? "Check back soon, or submit one of your own."
+                : "Try a different keyword or clear the platform filter."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {paginated.map((h, i) => (
+              <HackathonCard key={h.id} hackathon={h} index={i} onParticipate={handleParticipate} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {!loading && !error && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filtered.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={handlePageChange}
+        />
       )}
 
       {participateHackathon && (
