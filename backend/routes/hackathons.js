@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { body, validationResult } from "express-validator";
 import { requireAuth } from "../middleware/auth.js";
+import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.js";
 import { submissionLimiter } from "../middleware/rateLimit.js";
 import * as hackathonRepo from "../repositories/hackathonRepo.js";
 import { toggleSavedHackathon } from "../repositories/userRepo.js";
@@ -72,6 +73,8 @@ router.get("/nearby", async (req, res, next) => {
 
 router.post(
   "/",
+  requireAuth,
+  requireVerifiedEmail,
   submissionLimiter,
   [
     body("title").trim().isLength({ min: 1, max: 120 }).withMessage("Title must be between 1 and 120 characters"),
@@ -79,14 +82,13 @@ router.post(
     body("location").trim().isLength({ min: 1, max: 120 }).withMessage("Location is required"),
     body("startDate").isISO8601().toDate().withMessage("Enter a valid start date"),
     body("endDate").isISO8601().toDate().withMessage("Enter a valid end date"),
-    body("organizerEmail").trim().isEmail().normalizeEmail().withMessage("Enter a valid organizer email"),
   ],
   async (req, res, next) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
 
     try {
-      const { title, url, location, startDate, endDate, organizerEmail } = req.body;
+      const { title, url, location, startDate, endDate } = req.body;
       if (new Date(endDate) < new Date(startDate)) {
         return res.status(400).json({ error: "End date must be on or after the start date" });
       }
@@ -98,7 +100,7 @@ router.post(
         location,
         startDate,
         endDate,
-        organizerEmail,
+        organizerEmail: req.user.email,
         latitude: geo?.lat ?? null,
         longitude: geo?.lng ?? null,
       });
