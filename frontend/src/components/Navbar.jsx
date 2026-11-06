@@ -4,6 +4,7 @@ import { Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
+import { getErrorMessage } from "@/utils/errors";
 
 const SubmitModal = lazy(() => import("@/modals/SubmitModal"));
 
@@ -24,9 +25,17 @@ export default function Navbar() {
   };
 
   const handleLogout = async () => {
-    await logout();
-    toast({ title: "Logged out" });
-    navigate("/");
+    try {
+      await logout();
+      toast({ title: "Logged out" });
+      navigate("/");
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't log out",
+        description: getErrorMessage(err, "Please try again."),
+      });
+    }
   };
 
   return (

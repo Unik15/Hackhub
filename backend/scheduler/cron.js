@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { listUsersForDigest } from "../repositories/userRepo.js";
 import { cleanupOldOtps } from "../repositories/otpRepo.js";
+import { cleanupOldResetTokens } from "../repositories/passwordResetRepo.js";
 import { findActive } from "../repositories/hackathonRepo.js";
 import { runCrawlers, expireOldHackathons } from "../crawlers/index.js";
 import { rankHackathonsForUser } from "../services/aiService.js";
@@ -24,6 +25,9 @@ export function startScheduler() {
     await expireOldHackathons().catch((e) => console.error("[scheduler] expire error:", e));
     await cleanupOldOtps().catch((e) =>
       console.error("[scheduler] OTP cleanup error:", e.message)
+    );
+    await cleanupOldResetTokens().catch((e) =>
+      console.error("[scheduler] Password reset token cleanup error:", e.message)
     );
   });
 

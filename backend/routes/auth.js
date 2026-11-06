@@ -28,8 +28,12 @@ import {
   getMissingSmtpVariables,
   sendOtpEmail,
 } from "../services/notificationService.js";
+import { getPasswordStrengthError } from "../utils/passwordPolicy.js";
+import passwordResetRoutes from "./passwordReset.js";
 
 const router = Router();
+
+router.use(passwordResetRoutes);
 const OTP_EXPIRES_IN_SECONDS = Math.floor(OTP_TTL_MS / 1000);
 
 function publicUser(user) {
@@ -112,7 +116,11 @@ router.post(
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email required").normalizeEmail(),
-    body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+    body("password").custom((value) => {
+      const message = getPasswordStrengthError(value);
+      if (message) throw new Error(message);
+      return true;
+    }),
   ],
   async (req, res, next) => {
     const errors = validationResult(req);

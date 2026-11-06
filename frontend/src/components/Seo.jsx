@@ -5,7 +5,7 @@ const SITE_NAME = "HackHub";
 const DEFAULT_DESCRIPTION = "Find hackathons tailored to your skills and join the best builders.";
 const SITE_URL = typeof window !== "undefined" ? window.location.origin : "";
 
-export default function Seo({ title, description, path, image, noindex = false }) {
+export default function Seo({ title, description, path, image, noindex = false, referrerPolicy }) {
   const fullTitle = title ? `${title} | ${SITE_NAME}` : `${SITE_NAME} — Discover, build, and compete`;
   const desc = description || DEFAULT_DESCRIPTION;
   const url = path ? `${SITE_URL}${path}` : SITE_URL;
@@ -14,6 +14,7 @@ export default function Seo({ title, description, path, image, noindex = false }
     <Helmet>
       <title>{fullTitle}</title>
       <meta name="description" content={desc} />
+      {referrerPolicy && <meta name="referrer" content={referrerPolicy} />}
       {noindex && <meta name="robots" content="noindex, nofollow" />}
       <link rel="canonical" href={url} />
 

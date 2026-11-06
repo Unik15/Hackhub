@@ -39,8 +39,12 @@ function toUser(row) {
   };
 }
 
+export async function hashPassword(password) {
+  return bcrypt.hash(password, 10);
+}
+
 export async function createUser({ name, email, password }) {
-  const hashed = await bcrypt.hash(password, 10);
+  const hashed = await hashPassword(password);
 
   const { data, error } = await adminClient
     .from("users")
