@@ -106,6 +106,15 @@ export default function Login() {
         </p>
       )}
 
+      {location.state?.reset && (
+        <p
+          role="status"
+          className="mb-5 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300"
+        >
+          Password reset successfully. Log in with your new password.
+        </p>
+      )}
+
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-4">
         <Field label="Email" error={errors.email?.message}>
           <input
@@ -118,7 +127,19 @@ export default function Login() {
           />
         </Field>
 
-        <Field label="Password" error={errors.password?.message}>
+        <Field
+          label="Password"
+          error={errors.password?.message}
+          action={
+            <Link
+              to="/forgot-password"
+              className="text-xs font-medium transition-colors hover:underline"
+              style={{ color: "#F2A93B" }}
+            >
+              Forgot password?
+            </Link>
+          }
+        >
           <input
             type="password"
             autoComplete="current-password"

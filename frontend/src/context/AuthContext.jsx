@@ -1,5 +1,12 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { getMe, loginRequest, signupRequest, logoutRequest } from "@/services/auth";
+import { publishAuthEvent, subscribeToAuthEvents } from "@/utils/authEvents";
 
 const AuthContext = createContext(null);
 
@@ -9,7 +16,7 @@ export function AuthProvider({ children }) {
   // from any individual form's isSubmitting. ProtectedRoute waits on this.
   const [loading, setLoading] = useState(true);
 
-  const loadSession = async () => {
+  const loadSession = useCallback(async () => {
     try {
       const me = await getMe();
       setUser(me || null);
@@ -20,16 +27,43 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadSession]);
+
+  useEffect(
+    () =>
+      subscribeToAuthEvents((event) => {
+        if (event.type === "logout") {
+          setUser(null);
+          setLoading(false);
+        } else if (event.type === "login") {
+          loadSession();
+        }
+      }),
+    [loadSession]
+  );
+
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState === "visible") loadSession();
+    };
+
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
+    };
+  }, [loadSession]);
 
   const login = async (credentials) => {
     const data = await loginRequest(credentials);
     setUser(data?.user ?? data);
+    publishAuthEvent("login");
     return data;
   };
 
@@ -41,6 +75,7 @@ export function AuthProvider({ children }) {
   const logout = async () => {
     await logoutRequest();
     setUser(null);
+    publishAuthEvent("logout");
   };
 
   return (

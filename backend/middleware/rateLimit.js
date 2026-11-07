@@ -48,6 +48,35 @@ export const otpVerifyLimiter = rateLimit({
   },
 });
 
+function passwordResetRequestKey(req) {
+  const email =
+    typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "unknown";
+  return `${email}:${req.ip}`;
+}
+
+export const passwordResetRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: passwordResetRequestKey,
+  message: {
+    code: "PASSWORD_RESET_RATE_LIMITED",
+    error: "Too many password reset requests. Please wait and try again.",
+  },
+});
+
+export const passwordResetSubmitLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "PASSWORD_RESET_RATE_LIMITED",
+    error: "Too many password reset attempts. Please wait and try again.",
+  },
+});
+
 // Public submissions are intentionally more restrictive than normal reads to
 // limit spam while still allowing legitimate organizers to submit an event.
 export const submissionLimiter = rateLimit({

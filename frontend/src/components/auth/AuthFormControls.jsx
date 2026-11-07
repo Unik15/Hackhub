@@ -2,10 +2,13 @@ import React from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function Field({ label, error, children }) {
+export function Field({ label, error, action, children }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-white/60">{label}</label>
+      <div className="mb-1.5 flex items-center justify-between gap-3">
+        <label className="block text-xs font-medium text-white/60">{label}</label>
+        {action}
+      </div>
       {children}
       {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
     </div>

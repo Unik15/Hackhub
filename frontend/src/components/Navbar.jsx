@@ -33,7 +33,11 @@ export default function Navbar() {
       toast({ title: "Logged out" });
       navigate("/");
     } catch (err) {
-      toast({ variant: "destructive", title: "Couldn't log out", description: getErrorMessage(err) });
+      toast({
+        variant: "destructive",
+        title: "Couldn't log out",
+        description: getErrorMessage(err, "Please try again."),
+      });
     } finally {
       setLoggingOut(false);
     }

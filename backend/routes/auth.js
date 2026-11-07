@@ -28,8 +28,12 @@ import {
   getMissingSmtpVariables,
   sendOtpEmail,
 } from "../services/notificationService.js";
+import { getPasswordStrengthError } from "../utils/passwordPolicy.js";
+import passwordResetRoutes from "./passwordReset.js";
 
 const router = Router();
+
+router.use(passwordResetRoutes);
 const OTP_EXPIRES_IN_SECONDS = Math.floor(OTP_TTL_MS / 1000);
 
 function publicUser(user) {
@@ -113,7 +117,11 @@ router.post(
   [
     body("name").trim().notEmpty().withMessage("Name is required"),
     body("email").isEmail().withMessage("Valid email required").normalizeEmail(),
-    body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+    body("password").custom((value) => {
+      const message = getPasswordStrengthError(value);
+      if (message) throw new Error(message);
+      return true;
+    }),
     body("college").optional().trim().isLength({ max: 150 }).withMessage("College must be 150 characters or fewer"),
   ],
   async (req, res, next) => {
@@ -126,7 +134,7 @@ router.post(
     }
 
     try {
-      const { name, email, password } = req.body;
+      const { name, email, password, college } = req.body;
       const existing = await findByEmail(email);
 
       if (existing?.emailVerified) {
@@ -148,7 +156,7 @@ router.post(
 
       if (emailConfigProblem(res)) return;
 
-      const user = await createUser({ name, email, password });
+      const user = await createUser({ name, email, password, college });
       let delivery;
 
       try {

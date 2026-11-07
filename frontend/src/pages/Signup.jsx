@@ -9,13 +9,19 @@ import { useAuth } from "@/context/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/utils/errors";
 import { rememberPendingEmail } from "@/utils/verification";
+import { PASSWORD_REQUIREMENTS, getPasswordStrengthError } from "@/utils/passwordPolicy";
 import Seo from "@/components/Seo";
 
 const signupSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required.").max(120, "That name is too long."),
     email: z.string().trim().min(1, "Email is required.").email("Enter a valid email address."),
-    password: z.string().min(8, "Password must be at least 8 characters."),
+    password: z.string().superRefine((value, ctx) => {
+      const message = getPasswordStrengthError(value);
+      if (message) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    }),
     confirmPassword: z.string().min(1, "Please confirm your password."),
     college: z.string().trim().min(1, "College / organization is required.").max(150, "That's too long."),
   })
@@ -165,6 +171,10 @@ export default function Signup() {
               className={authInputClass(errors.confirmPassword)}
             />
           </Field>
+
+          <p className="col-span-2 text-[11px] leading-relaxed text-white/40">
+            {PASSWORD_REQUIREMENTS}
+          </p>
         </div>
 
         <Field label="College / organization" error={errors.college?.message}>

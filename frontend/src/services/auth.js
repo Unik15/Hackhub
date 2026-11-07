@@ -28,6 +28,22 @@ export async function resendEmailOtp({ email }) {
   return data;
 }
 
+/** Request a password reset link. The backend always returns a generic response. */
+export async function forgotPasswordRequest({ email }) {
+  const { data } = await axiosClient.post("/auth/forgot-password", { email }, { timeout: 20000 });
+  return data;
+}
+
+/** Consume a single-use reset token and set a new password. */
+export async function resetPasswordRequest({ token, password }) {
+  const { data } = await axiosClient.post(
+    "/auth/reset-password",
+    { token, password },
+    { timeout: 20000 }
+  );
+  return data;
+}
+
 /** GET /auth/me — the source of truth for "is anyone logged in right now". */
 export async function getMe() {
   const { data } = await axiosClient.get("/auth/me");
