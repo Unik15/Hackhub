@@ -7,7 +7,7 @@ import { adminClient } from "../config/supabase.js";
 // listUsersForDigest() were all pulling the bcrypt hash into the app
 // process on every call despite toUser() never reading it.
 const SAFE_USER_COLUMNS =
-  "id, name, email, phone, college, skills, experience, interests, city, latitude, longitude, " +
+  "id, name, email, email_verified, email_verified_at, phone, college, skills, experience, interests, city, latitude, longitude, " +
   "preferred_mode, notify_email, notify_whatsapp, notify_daily_digest, created_at";
 
 /** Map a Postgres row (snake_case) to the camelCase shape the rest of the app expects. */
@@ -17,6 +17,8 @@ function toUser(row) {
     id: row.id,
     name: row.name,
     email: row.email,
+    emailVerified: row.email_verified === true,
+    emailVerifiedAt: row.email_verified_at || null,
     phone: row.phone,
     college: row.college || null,
     profile: {
@@ -43,7 +45,13 @@ export async function createUser({ name, email, password, college }) {
 
   const { data, error } = await adminClient
     .from("users")
-    .insert({ name, email: email.toLowerCase(), password: hashed, college: college?.trim() || null })
+    .insert({
+      name,
+      email: email.toLowerCase(),
+      password: hashed,
+      college: college?.trim() || null,
+      email_verified: false,
+    })
     .select(SAFE_USER_COLUMNS)
     .single();
 
@@ -52,6 +60,25 @@ export async function createUser({ name, email, password, college }) {
     throw error;
   }
   return toUser(data);
+}
+
+export async function findByEmail(email) {
+  const { data, error } = await adminClient
+    .from("users")
+    .select(SAFE_USER_COLUMNS)
+    .eq("email", email.toLowerCase())
+    .maybeSingle();
+  if (error) throw error;
+  return toUser(data);
+}
+
+export async function deleteUnverifiedUser(id) {
+  const { error } = await adminClient
+    .from("users")
+    .delete()
+    .eq("id", id)
+    .eq("email_verified", false);
+  if (error) throw error;
 }
 
 /** Includes the password hash — only for internal login comparison, never returned to the client. */
@@ -113,6 +140,7 @@ export async function listUsersForDigest(limit = 200, offset = 0) {
     .from("users")
     .select(SAFE_USER_COLUMNS)
     .eq("notify_daily_digest", true)
+    .eq("email_verified", true)
     .order("id") // stable order — required for offset pagination to not skip/repeat rows across pages
     .range(offset, offset + limit - 1);
   if (error) throw error;

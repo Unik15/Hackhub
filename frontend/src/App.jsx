@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Participants = lazy(() => import("@/pages/Participants"));
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
+const VerifyEmail = lazy(() => import("@/pages/VerifyEmail"));
 
 export default function App() {
   return (
@@ -20,10 +21,18 @@ export default function App() {
       {/* Auth pages own their full-screen layout — no navbar/ambient wrapper */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
       <Route element={<MainLayout />}>
         <Route path="/" element={<Home />} />
-        <Route path="/explore" element={<HackathonList />} />
+        <Route
+          path="/explore"
+          element={
+            <ProtectedRoute>
+              <HackathonList />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/hackathon/:id" element={<HackathonDetails />} />
         <Route
           path="/dashboard"

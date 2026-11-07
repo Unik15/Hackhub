@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "crawl": "node crawlers/index.js"
+    "crawl": "node crawlers/index.js",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "express": "^4.19.2",

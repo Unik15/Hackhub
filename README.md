@@ -10,9 +10,12 @@ trade-offs, and scaling notes.
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. Open the SQL editor and run `backend/sql/schema.sql` — this creates the `users`,
-   `hackathons`, and `saved_hackathons` tables, indexes, full-text search, and the
-   `increment_trending_score` helper function.
-3. Grab your `SUPABASE_URL` and `service_role` key from **Settings → API**.
+   `hackathons`, `saved_hackathons`, and `email_verification_otps` tables, indexes,
+   full-text search, and the helper functions used by discovery and email verification.
+3. Run each file in `backend/sql/migrations/` in filename order. Existing databases need
+   `20261102_add_email_verification.sql` for OTP verification and verified-organizer
+   submission checks.
+4. Grab your `SUPABASE_URL` and `service_role` key from **Settings → API**.
 
 ### 2. Backend
 
@@ -51,8 +54,12 @@ The Vite dev server proxies `/api/*` to `http://localhost:5000` (see `vite.confi
 
 ## Environment variables
 
-See `backend/.env.example` for the full list: Supabase URL/service key, JWT secret, Ollama
-endpoint/model, Google Maps key, SMTP creds, Twilio creds, and cron expressions.
+See `backend/.env.example` for the full list: Supabase URL/service key, JWT secret, OTP hashing
+secret, Ollama endpoint/model, Google Maps key, SMTP creds, Twilio creds, and cron expressions.
+
+Email signup verification requires `SMTP_HOST`, `SMTP_USER`, and `SMTP_PASS`; `SMTP_PORT`
+defaults to 587. Set a dedicated `OTP_HASH_SECRET`; if it is omitted, the backend falls
+back to `JWT_SECRET`.
 
 ## Deployment
 
