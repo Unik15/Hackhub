@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import { adminClient } from "../config/supabase.js";
+import { deriveStatus } from "../utils/hackathonStatus.js";
+
+// Re-exported so existing callers can keep importing it from this repo.
+export { deriveStatus };
 
 // =========================
 // 📦 SELECT COLUMNS
@@ -79,28 +83,6 @@ export function buildDedupeHash({ title, url, platform }) {
 }
 
 // =========================
-// 🏷️ STATUS FROM DATES
-// =========================
-/**
- * Derives a listing's status from its own dates, so a crawl never publishes an
- * already-finished event as "upcoming" until the nightly expiry job catches up
- * (up to 24 hours later). Mirrors expireOld()'s rule so the two cannot disagree.
- */
-export function deriveStatus(startDate, endDate, now = Date.now()) {
-  const start = startDate ? Date.parse(startDate) : NaN;
-  const end = endDate ? Date.parse(endDate) : NaN;
-  const hasStart = Number.isFinite(start);
-  const hasEnd = Number.isFinite(end);
-
-  if (!hasStart && !hasEnd) return "upcoming";
-
-  const expired = hasEnd ? end < now : start < now;
-  if (expired) return "expired";
-
-  return hasStart && start > now ? "upcoming" : "active";
-}
-
-// =========================
 // 🔥 UPSERT (CRAWLER)
 // =========================
 export async function upsertHackathon(data) {
@@ -164,6 +146,95 @@ export async function listOrganizerHackathons(email) {
 
   if (error) throw error;
   return data.map(toHackathon);
+}
+
+/**
+ * Publishes an approved manual submission into the public hackathons table.
+ *
+ * Status is derived from the submitted dates, not from the submission state, so
+ * a listing approved after its end date is published as 'expired' (invisible to
+ * the public feed) instead of masquerading as upcoming.
+ *
+ * A resubmission of a previously approved title+URL hits the dedupe_hash unique
+ * constraint. Rather than failing the approval, that listing is refreshed with
+ * the new dates and returned with created=false.
+ */
+export async function publishManualSubmission(submission) {
+  const dedupe_hash = buildDedupeHash({
+    title: submission.title,
+    url: submission.url,
+    platform: "manual",
+  });
+  const isOnline = submission.mode === "online";
+
+  const row = {
+    title: submission.title,
+    description: submission.description || "",
+    url: submission.url,
+    platform: "manual",
+    source_name: "Manual submission",
+    location: submission.location || "",
+    latitude: submission.latitude ?? null,
+    longitude: submission.longitude ?? null,
+    mode: submission.mode || (isOnline ? "online" : "offline"),
+    is_online: isOnline,
+    organizer_email: submission.organizerEmail,
+    start_date: submission.startDate,
+    end_date: submission.endDate,
+    status: deriveStatus(submission.startDate, submission.endDate),
+    dedupe_hash,
+  };
+
+  const { data, error } = await adminClient
+    .from("hackathons")
+    .insert(row)
+    .select(LIST_COLUMNS)
+    .single();
+
+  if (!error) return { hackathon: toHackathon(data), created: true };
+
+  if (error.code !== "23505") throw error;
+
+  // Already published once (e.g. resubmitted after a rejection): refresh it.
+  const { data: existing, error: findError } = await adminClient
+    .from("hackathons")
+    .select("id")
+    .eq("dedupe_hash", dedupe_hash)
+    .single();
+
+  if (findError) throw findError;
+
+  const { data: updated, error: updateError } = await adminClient
+    .from("hackathons")
+    .update({
+      title: row.title,
+      description: row.description,
+      location: row.location,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      mode: row.mode,
+      is_online: row.is_online,
+      organizer_email: row.organizer_email,
+      start_date: row.start_date,
+      end_date: row.end_date,
+      status: row.status,
+    })
+    .eq("id", existing.id)
+    .select(LIST_COLUMNS)
+    .single();
+
+  if (updateError) throw updateError;
+
+  return { hackathon: toHackathon(updated), created: false };
+}
+
+/**
+ * Compensation path for a failed approval: the submission could not be marked
+ * approved, so the listing published for it must not stay public.
+ */
+export async function deleteHackathonById(id) {
+  const { error } = await adminClient.from("hackathons").delete().eq("id", id);
+  if (error) throw error;
 }
 
 /**

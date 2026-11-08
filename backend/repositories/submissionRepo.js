@@ -112,3 +112,71 @@ export async function listSubmissionsByEmail(email) {
   if (error) throw error;
   return data.map(toSubmission);
 }
+
+/** Single submission by id — the admin queue's approve/reject lookup. */
+export async function findSubmissionById(id) {
+  const { data, error } = await adminClient
+    .from("hackathon_submissions")
+    .select(SUBMISSION_COLUMNS)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  return toSubmission(data);
+}
+
+/**
+ * Review queue feed. Pending is oldest-first (FIFO review), while decided
+ * history is newest-first so recent decisions are easy to audit.
+ */
+export async function listSubmissionsForReview({ status } = {}) {
+  let query = adminClient.from("hackathon_submissions").select(SUBMISSION_COLUMNS);
+  if (status) query = query.eq("status", status);
+
+  const { data, error } = await query.order("created_at", {
+    ascending: status === "pending",
+  });
+
+  if (error) throw error;
+  return data.map(toSubmission);
+}
+
+/**
+ * Marks a pending submission approved and links it to the listing that was
+ * published for it. The `status = 'pending'` guard makes concurrent approvals
+ * safe: only one call can win, and the loser gets null back.
+ */
+export async function markApproved(id, reviewerId, hackathonId) {
+  const { data, error } = await adminClient
+    .from("hackathon_submissions")
+    .update({
+      status: "approved",
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+      approved_hackathon_id: hackathonId,
+    })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select(SUBMISSION_COLUMNS);
+
+  if (error) throw error;
+  return data?.[0] ? toSubmission(data[0]) : null;
+}
+
+/** Rejects a pending submission, keeping the reviewer's note as the audit trail. */
+export async function markRejected(id, reviewerId, note) {
+  const { data, error } = await adminClient
+    .from("hackathon_submissions")
+    .update({
+      status: "rejected",
+      review_note: note,
+      reviewed_by: reviewerId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select(SUBMISSION_COLUMNS);
+
+  if (error) throw error;
+  return data?.[0] ? toSubmission(data[0]) : null;
+}
