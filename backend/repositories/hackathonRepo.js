@@ -149,6 +149,24 @@ export async function upsertHackathon(data) {
 }
 
 /**
+ * Public listings created by this organizer. Only approved submissions ever
+ * reach the hackathons table, so everything here is safe to show.
+ */
+export async function listOrganizerHackathons(email) {
+  if (!email) return [];
+
+  const { data, error } = await adminClient
+    .from("hackathons")
+    .select(LIST_COLUMNS)
+    .ilike("organizer_email", email)
+    .eq("platform", "manual")
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data.map(toHackathon);
+}
+
+/**
  * Whether this account has ever submitted a hackathon. Drives organizer-only
  * UI (dashboard access) — computed live rather than stored, so it can never
  * go stale when a submission is rejected or removed.

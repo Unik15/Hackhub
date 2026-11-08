@@ -98,3 +98,17 @@ export async function createSubmission({
 
   return toSubmission(data);
 }
+
+/** Every submission this organizer ever made, newest first — the dashboard's "My submissions" table. */
+export async function listSubmissionsByEmail(email) {
+  if (!email) return [];
+
+  const { data, error } = await adminClient
+    .from("hackathon_submissions")
+    .select(SUBMISSION_COLUMNS)
+    .ilike("organizer_email", email)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return data.map(toSubmission);
+}
