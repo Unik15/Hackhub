@@ -64,6 +64,11 @@ export default function Navbar() {
               Dashboard
             </NavLink>
           )}
+          {user?.role === "admin" && (
+            <NavLink to="/admin/reviews" className={navLinkClass}>
+              Reviews
+            </NavLink>
+          )}
         </nav>
 
         {/* Right side — plain login/user link, then one prominent pill CTA */}

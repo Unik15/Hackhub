@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import MainLayout from "@/layouts/MainLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import AdminRoute from "@/components/AdminRoute";
 import PageLoader from "@/components/PageLoader";
 import { Toaster } from "@/components/ui/toaster";
 
@@ -10,6 +11,7 @@ const Home = lazy(() => import("@/pages/home"));
 const HackathonList = lazy(() => import("@/pages/HackathonList"));
 const HackathonDetails = lazy(() => import("@/pages/HackathonDetails"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const AdminReviews = lazy(() => import("@/pages/AdminReviews"));
 const Participants = lazy(() => import("@/pages/Participants"));
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
@@ -54,6 +56,14 @@ export default function App() {
               <ProtectedRoute>
                 <Participants />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/reviews"
+            element={
+              <AdminRoute>
+                <AdminReviews />
+              </AdminRoute>
             }
           />
         </Route>
