@@ -200,6 +200,24 @@ export async function createSubmittedHackathon({
   return toHackathon(data);
 }
 
+/**
+ * Whether this account has ever submitted a hackathon. Drives organizer-only
+ * UI (dashboard access) — computed live rather than stored, so it can never
+ * go stale when a submission is rejected or removed.
+ */
+export async function hasSubmittedHackathons(email) {
+  if (!email) return false;
+
+  const { data, error } = await adminClient
+    .from("hackathon_submissions")
+    .select("id")
+    .ilike("organizer_email", email)
+    .limit(1);
+
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 // =========================
 // 🔍 SEARCH + FILTER + PAGINATION
 // =========================
