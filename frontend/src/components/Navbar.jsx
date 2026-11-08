@@ -59,7 +59,7 @@ export default function Navbar() {
           <NavLink to="/explore" className={navLinkClass}>
             Explore
           </NavLink>
-          {user && (
+          {user && (user.hasSubmissions || user.role === "admin") && (
             <NavLink to="/dashboard" className={navLinkClass}>
               Dashboard
             </NavLink>

@@ -1,23 +1,20 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Users,
   Trophy,
-  Radio,
   CalendarClock,
+  ClipboardList,
   ArrowUpRight,
   AlertTriangle,
   RotateCcw,
-  Search,
 } from "lucide-react";
 import Table from "@/components/Table";
 import Seo from "@/components/Seo";
-import { fetchOrganizerHackathons } from "@/services/organizer";
+import { fetchOrganizerHackathons, fetchOrganizerSubmissions } from "@/services/organizer";
 import { getErrorMessage } from "@/utils/errors";
 import { useAuth } from "@/context/AuthContext";
-import { formatDateRange } from "@/utils/date";
-
-const STORAGE_KEY = "hackhub_organizer_email";
+import { formatDateRange, safeFormatDate } from "@/utils/date";
 
 /** Derives a status from dates we already have — nothing fabricated. */
 function getStatus(h) {
@@ -37,46 +34,44 @@ const STATUS_STYLES = {
   unknown: "bg-muted text-muted-foreground",
 };
 
+const SUBMISSION_STATUS_STYLES = {
+  pending: "bg-secondary/10 text-secondary",
+  approved: "bg-primary/15 text-primary",
+  rejected: "bg-destructive/10 text-destructive",
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  // Prefer the logged-in account's email; fall back to whatever was typed
-  // in last time, for backends where the organizer email can differ.
-  const [email, setEmail] = useState(() => user?.email || localStorage.getItem(STORAGE_KEY) || "");
   const [hackathons, setHackathons] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [submissions, setSubmissions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searched, setSearched] = useState(false);
 
-  const load = async (organizerEmail) => {
-    const trimmed = organizerEmail?.trim();
-    if (!trimmed || loading) return; // guards duplicate submissions (e.g. Enter-key spam)
+  const load = async () => {
     setLoading(true);
     setError(null);
-    setSearched(true);
     try {
-      const data = await fetchOrganizerHackathons(trimmed);
-      setHackathons(data);
-      localStorage.setItem(STORAGE_KEY, trimmed);
+      // Both feeds are scoped to the session server-side; no email is sent.
+      const [hackathonData, submissionData] = await Promise.all([
+        fetchOrganizerHackathons(),
+        fetchOrganizerSubmissions(),
+      ]);
+      setHackathons(hackathonData);
+      setSubmissions(submissionData);
     } catch (err) {
-      setError(getErrorMessage(err, "Couldn't load your hackathons."));
+      setError(getErrorMessage(err, "Couldn't load your dashboard."));
     } finally {
       setLoading(false);
     }
   };
 
-  // Auto-load if we remember an email from a previous visit.
   useEffect(() => {
-    if (email) load(email);
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    load(email);
-  };
-
-  // Everything below is derived straight from `hackathons` — no invented
+  // Everything below is derived straight from the fetched rows — no invented
   // historical data, so there's no "+35% vs last month" chip anywhere.
   const stats = useMemo(() => {
     const total = hackathons.length;
@@ -91,10 +86,21 @@ export default function Dashboard() {
       else if (status === "live") live++;
       else if (status === "ended") ended++;
     }
-    return { total, participants, upcoming, live, ended };
-  }, [hackathons]);
 
-  const columns = [
+    const pending = submissions.filter((s) => s.status === "pending").length;
+
+    return { total, participants, upcoming, live, ended, pending };
+  }, [hackathons, submissions]);
+
+  // Accounts that never submitted anything (and are not admins) get a friendly
+  // empty state instead of an empty analytics shell.
+  const hasAnyData =
+    submissions.length > 0 ||
+    hackathons.length > 0 ||
+    user?.hasSubmissions === true ||
+    user?.role === "admin";
+
+  const hackathonColumns = [
     {
       header: "Hackathon",
       accessor: "title",
@@ -143,6 +149,60 @@ export default function Dashboard() {
     },
   ];
 
+  const submissionColumns = [
+    {
+      header: "Hackathon",
+      accessor: "title",
+      render: (row) => <span className="font-ui font-medium text-foreground">{row.title || "Untitled"}</span>,
+    },
+    {
+      header: "Dates",
+      accessor: "startDate",
+      render: (row) => (
+        <span className="font-stub text-xs text-muted-foreground">{formatDateRange(row.startDate, row.endDate)}</span>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: "status",
+      render: (row) => (
+        <span
+          className={`inline-block rounded-full px-2.5 py-1 text-xs font-ui font-medium capitalize ${SUBMISSION_STATUS_STYLES[row.status] || "bg-muted text-muted-foreground"}`}
+        >
+          {row.status}
+        </span>
+      ),
+    },
+    {
+      header: "Review note",
+      accessor: "reviewNote",
+      render: (row) => (
+        <span className="font-body text-xs text-muted-foreground">{row.reviewNote || "—"}</span>
+      ),
+    },
+    {
+      header: "Submitted",
+      accessor: "createdAt",
+      render: (row) => (
+        <span className="font-stub text-xs text-muted-foreground">{safeFormatDate(row.createdAt) || "—"}</span>
+      ),
+    },
+    {
+      header: "",
+      accessor: "actions",
+      render: (row) =>
+        row.approvedHackathonId ? (
+          <button
+            onClick={() => navigate(`/hackathon/${row.approvedHackathonId}`)}
+            aria-label="View public listing"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-80"
+          >
+            <ArrowUpRight size={14} />
+          </button>
+        ) : null,
+    },
+  ];
+
   return (
     <div className="container py-12">
       <Seo title="Organizer Dashboard" noindex />
@@ -150,48 +210,39 @@ export default function Dashboard() {
       <div className="mb-8">
         <h1 className="font-heading text-3xl sm:text-4xl">Organizer Dashboard</h1>
         <p className="mt-2 font-body text-sm text-muted-foreground">
-          Manage the hackathons you've submitted and see who's joining.
+          Track your submissions and manage the hackathons you've published.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="mb-8 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[260px] max-w-sm flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@organization.com"
-            disabled={loading}
-            className="w-full rounded border border-border bg-card py-2.5 pl-9 pr-3 text-sm font-body text-foreground outline-none transition-colors focus:border-primary disabled:opacity-60"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded bg-primary px-4 py-2.5 text-sm font-ui font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {loading ? "Loading…" : "Load my hackathons"}
-        </button>
-      </form>
-
-      {!searched ? (
-        <div className="rounded border border-border bg-card py-16 text-center">
-          <p className="font-ui text-sm text-foreground">Enter the email you used to submit hackathons.</p>
-        </div>
-      ) : loading ? (
+      {loading ? (
         <DashboardSkeleton />
       ) : error ? (
         <div className="flex flex-col items-center gap-3 rounded border border-destructive/30 bg-destructive/5 py-16 text-center">
           <AlertTriangle size={26} className="text-destructive" />
           <p className="font-ui text-sm text-foreground">{error}</p>
           <button
-            onClick={() => load(email)}
+            onClick={load}
             className="mt-2 inline-flex items-center gap-1.5 rounded border border-border px-4 py-2 text-sm font-ui text-foreground hover:bg-muted"
           >
             <RotateCcw size={14} /> Retry
           </button>
+        </div>
+      ) : !hasAnyData ? (
+        <div className="mx-auto max-w-lg rounded-lg border border-border bg-card px-6 py-16 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <ClipboardList size={20} />
+          </div>
+          <h2 className="font-heading text-2xl text-foreground">Nothing to manage yet</h2>
+          <p className="mt-2 font-body text-sm text-muted-foreground">
+            The organizer dashboard unlocks after your first hackathon submission. Submit one and
+            you'll be able to track its review status here.
+          </p>
+          <Link
+            to="/explore"
+            className="mt-6 inline-flex items-center gap-1.5 rounded bg-primary px-5 py-2.5 text-sm font-ui font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          >
+            Explore hackathons <ArrowUpRight size={14} />
+          </Link>
         </div>
       ) : (
         <div className="flex flex-col gap-8">
@@ -199,14 +250,26 @@ export default function Dashboard() {
           <section>
             <h2 className="mb-3 font-heading text-sm tracking-tight text-foreground">Summary</h2>
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-              <KpiCard icon={Trophy} label="Total Hackathons" value={stats.total} tone="secondary" caption="submitted by you" />
+              <KpiCard icon={Trophy} label="Total Hackathons" value={stats.total} tone="secondary" caption="published by you" />
               <KpiCard icon={Users} label="Total Participants" value={stats.participants} tone="primary" caption="across all events" />
-              <KpiCard icon={Radio} label="Live Now" value={stats.live} tone="signal" caption="currently running" />
-              <KpiCard icon={CalendarClock} label="Upcoming" value={stats.upcoming} tone="muted" caption="not started yet" />
+              <KpiCard icon={CalendarClock} label="Pending Review" value={stats.pending} tone="muted" caption="waiting for approval" />
+              <KpiCard icon={CalendarClock} label="Upcoming" value={stats.upcoming} tone="signal" caption="not started yet" />
             </div>
           </section>
 
-          {/* Insights & Performance — status breakdown as a share of total */}
+          {/* My Submissions — the manual review trail, shown first */}
+          {submissions.length > 0 && (
+            <section>
+              <h2 className="mb-3 font-heading text-sm tracking-tight text-foreground">My Submissions</h2>
+              <Table
+                columns={submissionColumns}
+                data={submissions}
+                emptyMessage="You haven't submitted a hackathon yet."
+              />
+            </section>
+          )}
+
+          {/* Status breakdown of published listings */}
           <section>
             <h2 className="mb-3 font-heading text-sm tracking-tight text-foreground">Status Breakdown</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -216,10 +279,14 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {/* Table */}
+          {/* Published hackathons */}
           <section>
             <h2 className="mb-3 font-heading text-sm tracking-tight text-foreground">Your Hackathons</h2>
-            <Table columns={columns} data={hackathons} emptyMessage="No hackathons found for this email yet." />
+            <Table
+              columns={hackathonColumns}
+              data={hackathons}
+              emptyMessage="Approved submissions appear here once they're published."
+            />
           </section>
         </div>
       )}
