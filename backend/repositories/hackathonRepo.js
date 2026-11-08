@@ -148,58 +148,6 @@ export async function upsertHackathon(data) {
   if (error) throw error;
 }
 
-
-/**
- * Creates an organizer-submitted listing in a pending state. Pending entries
- * are deliberately excluded from public discovery until reviewed.
- */
-export async function createSubmittedHackathon({
-  title,
-  url,
-  location,
-  startDate,
-  endDate,
-  organizerEmail,
-  latitude = null,
-  longitude = null,
-}) {
-  const dedupeHash = buildDedupeHash({ title, url, platform: "manual" });
-  const isOnline = /^(online|remote|virtual)\b/i.test(location);
-
-  const { data, error } = await adminClient
-    .from("hackathons")
-    .insert({
-      title,
-      description: "",
-      url,
-      platform: "manual",
-      location,
-      latitude,
-      longitude,
-      mode: isOnline ? "online" : "offline",
-      start_date: startDate,
-      end_date: endDate,
-      is_online: isOnline,
-      status: "pending",
-      dedupe_hash: dedupeHash,
-      organizer_email: organizerEmail,
-      views_count: 0,
-      apply_count: 0,
-      trending_score: 0,
-    })
-    .select(LIST_COLUMNS)
-    .single();
-
-  if (error) {
-    if (error.code === "23505") {
-      throw Object.assign(new Error("This hackathon has already been submitted."), { status: 409 });
-    }
-    throw error;
-  }
-
-  return toHackathon(data);
-}
-
 /**
  * Whether this account has ever submitted a hackathon. Drives organizer-only
  * UI (dashboard access) — computed live rather than stored, so it can never
