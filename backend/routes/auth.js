@@ -29,6 +29,7 @@ import {
   sendOtpEmail,
 } from "../services/notificationService.js";
 import { getPasswordStrengthError } from "../utils/passwordPolicy.js";
+import { hasSubmittedHackathons } from "../repositories/hackathonRepo.js";
 import passwordResetRoutes from "./passwordReset.js";
 
 const router = Router();
@@ -45,6 +46,7 @@ function publicUser(user) {
     college: user.college || null,
     emailVerified: user.emailVerified ?? user.email_verified === true,
     emailVerifiedAt: user.emailVerifiedAt ?? user.email_verified_at ?? null,
+    role: user.role || "user",
   };
 }
 
@@ -372,7 +374,12 @@ router.get("/me", requireAuth, async (req, res, next) => {
   try {
     const user = await findById(req.userId);
     if (!user) return res.status(401).json({ error: "Session is no longer valid" });
-    res.json({ user });
+
+    // Organizer-only surfaces (the dashboard) key off this: an account that
+    // has never submitted anything sees the simple-user experience.
+    const hasSubmissions = await hasSubmittedHackathons(user.email);
+
+    res.json({ user: { ...user, hasSubmissions } });
   } catch (err) {
     next(err);
   }

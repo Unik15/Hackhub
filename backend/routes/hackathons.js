@@ -2,6 +2,7 @@ import { Router } from "express";
 import { body, validationResult } from "express-validator";
 import { requireAuth } from "../middleware/auth.js";
 import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.js";
+import { createSubmission } from "../repositories/submissionRepo.js";
 import { submissionLimiter } from "../middleware/rateLimit.js";
 import * as hackathonRepo from "../repositories/hackathonRepo.js";
 import { toggleSavedHackathon } from "../repositories/userRepo.js";
@@ -97,13 +98,14 @@ router.post(
       }
 
       const geo = /^(online|remote|virtual)\b/i.test(location) ? null : await geocodeCity(location);
-      const item = await hackathonRepo.createSubmittedHackathon({
+      const item = await createSubmission({
+        userId: req.user.id,
+        organizerEmail: req.user.email,
         title,
         url,
         location,
         startDate,
         endDate,
-        organizerEmail: req.user.email,
         latitude: geo?.lat ?? null,
         longitude: geo?.lng ?? null,
       });

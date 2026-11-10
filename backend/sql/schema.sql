@@ -46,6 +46,8 @@ create table if not exists public.users (
   password              text, -- bcrypt hash; null only for future OAuth-only accounts
   email_verified        boolean not null default false,
   email_verified_at     timestamptz,
+  role                  text not null default 'user'
+                          check (role in ('user', 'admin')),
   phone                 text,
   college               text,
 
@@ -172,6 +174,51 @@ create index if not exists idx_hackathons_domain
   on public.hackathons using gin (domain);
 create index if not exists idx_hackathons_tags
   on public.hackathons using gin (tags);
+
+-- ============================================================
+-- HACKATHON SUBMISSIONS (manual organizer submissions)
+-- ============================================================
+-- Pending submissions never enter public.hackathons. An admin approves or
+-- rejects them here; approval copies the row into hackathons (status derived
+-- from dates) and links the two via approved_hackathon_id.
+create table if not exists public.hackathon_submissions (
+  id                     uuid primary key default gen_random_uuid(),
+
+  user_id                uuid references public.users (id) on delete set null,
+  organizer_email        text not null,
+
+  title                  text not null,
+  url                    text not null,
+  description            text not null default '',
+  location               text not null default '',
+  latitude               double precision,
+  longitude              double precision,
+  mode                   text not null default 'offline',
+
+  start_date             timestamptz not null,
+  end_date               timestamptz not null,
+
+  status                 text not null default 'pending'
+                           check (status in ('pending', 'approved', 'rejected')),
+  review_note            text,
+  reviewed_by            uuid references public.users (id) on delete set null,
+  reviewed_at            timestamptz,
+  approved_hackathon_id  uuid references public.hackathons (id) on delete set null,
+
+  created_at             timestamptz not null default now(),
+
+  constraint hackathon_submissions_date_order check (end_date >= start_date)
+);
+
+alter table public.hackathon_submissions enable row level security;
+
+create index if not exists idx_hackathon_submissions_queue
+  on public.hackathon_submissions (status, created_at desc);
+create index if not exists idx_hackathon_submissions_user
+  on public.hackathon_submissions (user_id, created_at desc);
+create unique index if not exists idx_hackathon_submissions_one_pending_url
+  on public.hackathon_submissions (user_id, url)
+  where status = 'pending';
 
 -- ============================================================
 -- SAVED HACKATHONS (many-to-many join table)

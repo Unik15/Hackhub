@@ -1,14 +1,25 @@
 import { axiosClient } from "./axiosClient";
 
 /**
- * GET /organizer/hackathons
- * No auth system wired yet, so the organizer identifies themselves by the
- * same email they used on submission. Swap the `email` param for a token
- * once auth lands.
+ * Organizer data is scoped to the signed-in account by the backend — no email
+ * is needed. `email` is only meaningful for admins inspecting another
+ * organizer, so it is sent only when explicitly provided.
  */
+
+/** GET /organizer/hackathons — published listings created by this organizer. */
 export async function fetchOrganizerHackathons(email) {
-  const { data } = await axiosClient.get("/organizer/hackathons", { params: { email } });
-  return Array.isArray(data) ? data : data?.data ?? [];
+  const { data } = await axiosClient.get("/organizer/hackathons", {
+    params: email ? { email } : undefined,
+  });
+  return data?.items ?? [];
+}
+
+/** GET /organizer/submissions — full pending/approved/rejected history. */
+export async function fetchOrganizerSubmissions(email) {
+  const { data } = await axiosClient.get("/organizer/submissions", {
+    params: email ? { email } : undefined,
+  });
+  return data?.items ?? [];
 }
 
 /**
